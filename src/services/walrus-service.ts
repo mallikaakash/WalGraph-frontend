@@ -11,6 +11,28 @@ import {
 } from './types';
 import { CONSTANTS } from '../constants';
 
+type GraphData = {
+  nodes?: Array<{
+    id?: string;
+    type?: string;
+    properties?: Record<string, unknown>;
+    labels?: string[];
+    createdAt?: number;
+    updatedAt?: number;
+  }>;
+  relationships?: Array<{
+    id?: string;
+    type?: string;
+    sourceId?: string;
+    targetId?: string;
+    properties?: Record<string, unknown>;
+    weight?: number;
+    createdAt?: number;
+    updatedAt?: number;
+  }>;
+  [key: string]: unknown;
+};
+
 export class WalrusService {
   private config: WalrusConfig;
   private readonly CONTEXT = {
@@ -47,6 +69,8 @@ export class WalrusService {
       aggregatorUrl: CONSTANTS.walrusAggregatorUrl,
       network: 'testnet'
     };
+
+    console.log('🌊 Walrus service initialized:', this.config);
   }
 
   /**
@@ -89,13 +113,21 @@ export class WalrusService {
    */
   async readGraph(blobId: string): Promise<{ nodes: GraphNode[]; relationships: GraphRelationship[] }> {
     try {
-      console.log('🔄 Reading from Walrus...');
-      const graphData = await this.readBlob(blobId);
+      console.log('🌊 Reading graph from Walrus:', blobId);
       
+      const graphData = await this.readBlob(blobId) as GraphData;
+      console.log('📊 Raw data structure:', Object.keys(graphData));
       console.log('🔄 Processing graph data...');
       
       // Handle simplified JSON format
-      const nodes: GraphNode[] = (graphData.nodes || []).map((node: any) => ({
+      const nodes: GraphNode[] = (graphData.nodes || []).map((node: {
+        id?: string;
+        type?: string;
+        properties?: Record<string, unknown>;
+        labels?: string[];
+        createdAt?: number;
+        updatedAt?: number;
+      }) => ({
         id: node.id || this.generateId(),
         type: node.type || 'Unknown',
         properties: node.properties || {},
@@ -104,7 +136,16 @@ export class WalrusService {
         updatedAt: node.updatedAt || Date.now()
       }));
 
-      const relationships: GraphRelationship[] = (graphData.relationships || []).map((rel: any) => ({
+      const relationships: GraphRelationship[] = (graphData.relationships || []).map((rel: {
+        id?: string;
+        type?: string;
+        sourceId?: string;
+        targetId?: string;
+        properties?: Record<string, unknown>;
+        weight?: number;
+        createdAt?: number;
+        updatedAt?: number;
+      }) => ({
         id: rel.id || this.generateId(),
         type: rel.type || 'RELATES_TO',
         sourceId: rel.sourceId || '',
@@ -126,7 +167,7 @@ export class WalrusService {
   /**
    * Store blob data to Walrus
    */
-  private async storeBlob(data: any): Promise<WalrusStorageResult> {
+  private async storeBlob(data: Record<string, unknown>): Promise<WalrusStorageResult> {
     const jsonString = JSON.stringify(data, null, 2);
     const blob = new Blob([jsonString], { type: 'application/json' });
     
@@ -158,7 +199,11 @@ export class WalrusService {
         return this.storeToLocalStorage(data);
       }
 
-      const result = await response.json();
+      const result = await response.json() as {
+        newlyCreated?: { blobObject?: { blobId?: string } };
+        alreadyCertified?: { blobId?: string };
+        blobId?: string;
+      };
       console.log('✅ Walrus response:', result);
       
       // Handle different response formats from Walrus
@@ -187,7 +232,7 @@ export class WalrusService {
   /**
    * Fallback storage using localStorage
    */
-  private storeToLocalStorage(data: any): WalrusStorageResult {
+  private storeToLocalStorage(data: Record<string, unknown>): WalrusStorageResult {
     const blobId = `local_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     const jsonString = JSON.stringify(data);
     
@@ -209,7 +254,7 @@ export class WalrusService {
   /**
    * Read blob data from Walrus
    */
-  private async readBlob(blobId: string): Promise<any> {
+  private async readBlob(blobId: string): Promise<Record<string, unknown>> {
     // Check if this is a localStorage blob
     if (blobId.startsWith('local_')) {
       return this.readFromLocalStorage(blobId);
@@ -223,11 +268,11 @@ export class WalrusService {
 
     const contentType = response.headers.get('content-type');
     if (contentType?.includes('application/json') || contentType?.includes('application/ld+json')) {
-      return await response.json();
+      return await response.json() as Record<string, unknown>;
     } else {
       const text = await response.text();
       try {
-        return JSON.parse(text);
+        return JSON.parse(text) as Record<string, unknown>;
       } catch {
         throw new Error('Invalid JSON data received from Walrus');
       }
@@ -237,13 +282,13 @@ export class WalrusService {
   /**
    * Read blob data from localStorage
    */
-  private readFromLocalStorage(blobId: string): any {
+  private readFromLocalStorage(blobId: string): Record<string, unknown> {
     try {
       const jsonString = localStorage.getItem(`walrus_blob_${blobId}`);
       if (!jsonString) {
         throw new Error(`Blob ${blobId} not found in localStorage`);
       }
-      return JSON.parse(jsonString);
+      return JSON.parse(jsonString) as Record<string, unknown>;
     } catch (error) {
       console.error('❌ localStorage read failed:', error);
       throw new Error(`Failed to read blob ${blobId} from localStorage`);
@@ -308,67 +353,114 @@ export class WalrusService {
   /**
    * Convert JSON-LD back to graph format
    */
-  private async convertFromJsonLD(jsonldData: any): Promise<{ nodes: GraphNode[]; relationships: GraphRelationship[] }> {
+  private async convertFromJsonLD(jsonldData: Record<string, unknown>): Promise<{ nodes: GraphNode[]; relationships: GraphRelationship[] }> {
     try {
-      // Expand JSON-LD to get full URIs
-      const expanded = await jsonld.expand(jsonldData);
-      const graph = expanded[0];
-
-      // Extract nodes
-      const nodesData = graph['https://webwalrus.dev/ontology#nodes'];
-      const nodes: GraphNode[] = (Array.isArray(nodesData) ? nodesData : []).map((nodeData: any) => {
-        const node = nodeData[0] || nodeData;
+      console.log('🔄 Converting from JSON-LD format');
+      
+      // Extract nodes array - handle both direct array and wrapped format
+      const nodesData = jsonldData.nodes || jsonldData['@graph'];
+      const relationshipsData = jsonldData.relationships || jsonldData.edges;
+      
+      const nodes: GraphNode[] = (Array.isArray(nodesData) ? nodesData : []).map((nodeData: {
+        "@id"?: string;
+        id?: string;
+        "@type"?: string;
+        nodeType?: string;
+        type?: string;
+        labels?: string[];
+        properties?: Record<string, unknown>;
+        createdAt?: number;
+        updatedAt?: number;
+      }) => {
+        const id = nodeData["@id"] || nodeData.id || this.generateId();
+        const type = nodeData.nodeType || nodeData.type || nodeData["@type"] || 'Unknown';
+        const labels = Array.isArray(nodeData.labels) ? nodeData.labels : [];
+        const properties = typeof nodeData.properties === 'object' && nodeData.properties !== null ? nodeData.properties : {};
+        
         return {
-          id: node['@id'] || this.generateId(),
-          type: this.extractValue(node['https://webwalrus.dev/ontology#nodeType']) || 'Unknown',
-          properties: this.extractValue(node['https://webwalrus.dev/ontology#properties']) || {},
-          labels: this.extractArray(node['https://webwalrus.dev/ontology#labels']) || [],
-          createdAt: this.extractNumber(node['https://webwalrus.dev/ontology#createdAt']) || Date.now(),
-          updatedAt: this.extractNumber(node['https://webwalrus.dev/ontology#updatedAt']) || Date.now()
+          id,
+          type,
+          labels,
+          properties,
+          createdAt: nodeData.createdAt || Date.now(),
+          updatedAt: nodeData.updatedAt || Date.now()
         };
       });
 
-      // Extract relationships
-      const relationshipsData = graph['https://webwalrus.dev/ontology#relationships'];
-      const relationships: GraphRelationship[] = (Array.isArray(relationshipsData) ? relationshipsData : []).map((relData: any) => {
-        const rel = relData[0] || relData;
+      const relationships: GraphRelationship[] = (Array.isArray(relationshipsData) ? relationshipsData : []).map((relData: {
+        "@id"?: string;
+        id?: string;
+        relationType?: string;
+        type?: string;
+        source?: string;
+        sourceId?: string;
+        target?: string;
+        targetId?: string;
+        properties?: Record<string, unknown>;
+        weight?: number;
+        createdAt?: number;
+        updatedAt?: number;
+      }) => {
+        const id = relData["@id"] || relData.id || this.generateId();
+        const type = relData.relationType || relData.type || 'RELATES_TO';
+        const sourceId = relData.source || relData.sourceId || '';
+        const targetId = relData.target || relData.targetId || '';
+        const properties = typeof relData.properties === 'object' && relData.properties !== null ? relData.properties : {};
+        
         return {
-          id: rel['@id'] || this.generateId(),
-          type: this.extractValue(rel['https://webwalrus.dev/ontology#relationType']) || 'RELATES_TO',
-          sourceId: this.extractValue(rel['https://webwalrus.dev/ontology#source']) || '',
-          targetId: this.extractValue(rel['https://webwalrus.dev/ontology#target']) || '',
-          properties: this.extractValue(rel['https://webwalrus.dev/ontology#properties']) || {},
-          weight: this.extractNumber(rel['https://webwalrus.dev/ontology#weight']),
-          createdAt: this.extractNumber(rel['https://webwalrus.dev/ontology#createdAt']) || Date.now(),
-          updatedAt: this.extractNumber(rel['https://webwalrus.dev/ontology#updatedAt']) || Date.now()
+          id,
+          type,
+          sourceId,
+          targetId,
+          properties,
+          weight: relData.weight,
+          createdAt: relData.createdAt || Date.now(),
+          updatedAt: relData.updatedAt || Date.now()
         };
       });
 
+      console.log(`✅ Converted JSON-LD: ${nodes.length} nodes, ${relationships.length} relationships`);
       return { nodes, relationships };
     } catch (error) {
-      console.warn('JSON-LD expansion failed, trying fallback parsing:', error);
+      console.error('❌ JSON-LD conversion failed:', error);
       return this.fallbackParse(jsonldData);
     }
   }
 
   /**
-   * Fallback parsing for non-standard JSON-LD
+   * Fallback parser for various JSON formats
    */
-  private fallbackParse(data: any): { nodes: GraphNode[]; relationships: GraphRelationship[] } {
-    const nodes: GraphNode[] = (data.nodes || []).map((node: any) => ({
-      id: node['@id'] || node.id || this.generateId(),
-      type: node.nodeType || node.type || 'Unknown',
+  private fallbackParse(data: Record<string, unknown>): { nodes: GraphNode[]; relationships: GraphRelationship[] } {
+    const nodes: GraphNode[] = (data.nodes as Array<{
+      id?: string;
+      type?: string;
+      properties?: Record<string, unknown>;
+      labels?: string[];
+      createdAt?: number;
+      updatedAt?: number;
+    }> || []).map((node) => ({
+      id: node.id || this.generateId(),
+      type: node.type || 'Unknown',
       properties: node.properties || {},
       labels: node.labels || [],
       createdAt: node.createdAt || Date.now(),
       updatedAt: node.updatedAt || Date.now()
     }));
 
-    const relationships: GraphRelationship[] = (data.relationships || []).map((rel: any) => ({
-      id: rel['@id'] || rel.id || this.generateId(),
-      type: rel.relationType || rel.type || 'RELATES_TO',
-      sourceId: rel.source || rel.sourceId || '',
-      targetId: rel.target || rel.targetId || '',
+    const relationships: GraphRelationship[] = (data.relationships as Array<{
+      id?: string;
+      type?: string;
+      sourceId?: string;
+      targetId?: string;
+      properties?: Record<string, unknown>;
+      weight?: number;
+      createdAt?: number;
+      updatedAt?: number;
+    }> || []).map((rel) => ({
+      id: rel.id || this.generateId(),
+      type: rel.type || 'RELATES_TO',
+      sourceId: rel.sourceId || '',
+      targetId: rel.targetId || '',
       properties: rel.properties || {},
       weight: rel.weight,
       createdAt: rel.createdAt || Date.now(),
@@ -379,31 +471,34 @@ export class WalrusService {
   }
 
   /**
-   * Extract value from JSON-LD array format
+   * Extract value handling different JSON-LD field formats
    */
-  private extractValue(field: any): any {
-    if (Array.isArray(field) && field.length > 0) {
-      return field[0]['@value'] || field[0];
+  private extractValue(field: unknown): unknown {
+    if (typeof field === 'object' && field !== null && '@value' in field) {
+      return (field as { '@value': unknown })['@value'];
     }
     return field;
   }
 
   /**
-   * Extract array from JSON-LD format
+   * Extract array handling different JSON-LD array formats
    */
-  private extractArray(field: any): any[] {
+  private extractArray(field: unknown): unknown[] {
     if (Array.isArray(field)) {
-      return field.map(item => item['@value'] || item);
+      return field.map(item => this.extractValue(item));
+    } else if (field) {
+      return [this.extractValue(field)];
     }
-    return field ? [field] : [];
+    return [];
   }
 
   /**
-   * Extract number from JSON-LD format
+   * Extract number with validation
    */
-  private extractNumber(field: any): number | undefined {
+  private extractNumber(field: unknown): number | undefined {
     const value = this.extractValue(field);
-    return value ? Number(value) : undefined;
+    const num = typeof value === 'string' ? parseFloat(value) : Number(value);
+    return isNaN(num) ? undefined : num;
   }
 
   /**

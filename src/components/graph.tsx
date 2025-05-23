@@ -182,7 +182,7 @@
 // }
 
 
-import { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useCallback } from 'react';
 import * as d3 from 'd3';
 import { Database, Network, Brain, Code, Link, User, Server, Shield, Clock, Zap } from 'lucide-react';
 import { SimulationNodeDatum } from 'd3';
@@ -271,15 +271,17 @@ export default function GraphMotion() {
     });
   }
 
-  useEffect(() => {
+  // Define the createGraph function with proper dependencies
+  const createGraph = useCallback(() => {
     if (!svgRef.current) return;
-    
+
     const svg = d3.select(svgRef.current);
-    const width = 1200;
-    const height = 1000;
-    
+    const width = 800;
+    const height = 600;
+
+    // Clear any existing content
     svg.selectAll("*").remove();
-    
+
     // Create definitions for filters and gradients
     const defs = svg.append("defs");
     
@@ -338,8 +340,8 @@ export default function GraphMotion() {
     
     // Create the simulation
     const simulation = d3.forceSimulation<Node>(nodes)
-      .force("link", d3.forceLink<Node, Link>(links).id(d => d.id).distance(d => 150 + Math.random() * 100).strength(0.2))
-      .force("charge", d3.forceManyBody().strength((node: SimulationNodeDatum) => -300 - Math.random() * 150))
+      .force("link", d3.forceLink<Node, Link>(links).id(d => d.id).distance(() => 150 + Math.random() * 100).strength(0.2))
+      .force("charge", d3.forceManyBody().strength(() => -300 - Math.random() * 150))
       .force("center", d3.forceCenter(width / 2, height / 2))
       .force("collision", d3.forceCollide().radius((node: SimulationNodeDatum) => {
         const n = node as Node;
@@ -517,7 +519,7 @@ export default function GraphMotion() {
       simulation
         .force("link", d3.forceLink<Node, Link>(links)
           .id(d => d.id)
-          .distance(d => 150 + Math.random() * 100)
+          .distance(() => 150 + Math.random() * 100)
           .strength(0.2));
           
       simulation.alpha(0.1).restart();
@@ -532,55 +534,34 @@ export default function GraphMotion() {
         
         if (!sourceNode || !targetNode) return '';
         
-        const dx = targetNode.x! - sourceNode.x!;
-        const dy = targetNode.y! - sourceNode.y!;
-        const dr = Math.sqrt(dx * dx + dy * dy) * 0.5; // Gentler curves
+        const dx = (targetNode.x || 0) - (sourceNode.x || 0);
+        const dy = (targetNode.y || 0) - (sourceNode.y || 0);
+        const controlX = (sourceNode.x || 0) + dx * 0.5 + dy * 0.2;
+        const controlY = (sourceNode.y || 0) + dy * 0.5 - dx * 0.2;
         
-        return `M${sourceNode.x},${sourceNode.y} 
-                Q ${(sourceNode.x! + targetNode.x!) / 2},
-                  ${(sourceNode.y! + targetNode.y!) / 2} 
-                  ${targetNode.x},${targetNode.y}`;
+        return `M ${sourceNode.x || 0} ${sourceNode.y || 0} Q ${controlX} ${controlY} ${targetNode.x || 0} ${targetNode.y || 0}`;
       });
       
       // Update nodes
-      node.attr("transform", d => `translate(${d.x},${d.y})`);
+      node.attr("transform", d => `translate(${d.x || 0}, ${d.y || 0})`);
       
-      // Update particles with smooth flow
-      particleElements.each(function(d) {
-        const currentLink = links[d.linkIndex];
-        const sourceNode = typeof currentLink.source === 'string' 
-          ? nodes.find(n => n.id === currentLink.source) 
-          : currentLink.source;
-        const targetNode = typeof currentLink.target === 'string' 
-          ? nodes.find(n => n.id === currentLink.target) 
-          : currentLink.target;
+      // Update particles along links
+      particleElements.attr("cx", d => {
+        const link = links[d.linkIndex];
+        const sourceNode = typeof link.source === 'string' ? nodes.find(n => n.id === link.source) : link.source;
+        const targetNode = typeof link.target === 'string' ? nodes.find(n => n.id === link.target) : link.target;
         
-        if (!sourceNode || !targetNode) return;
+        if (!sourceNode || !targetNode) return 0;
         
-        // Move particle along the path with consistent speed
-        d.progress += d.speed;
-        if (d.progress > 1) d.progress = 0;
+        return (sourceNode.x || 0) + ((targetNode.x || 0) - (sourceNode.x || 0)) * d.progress;
+      }).attr("cy", d => {
+        const link = links[d.linkIndex];
+        const sourceNode = typeof link.source === 'string' ? nodes.find(n => n.id === link.source) : link.source;
+        const targetNode = typeof link.target === 'string' ? nodes.find(n => n.id === link.target) : link.target;
         
-        // Calculate position along the quadratic bezier curve
-        const t = d.progress;
-        const mt = 1 - t;
+        if (!sourceNode || !targetNode) return 0;
         
-        // Get control point for smooth curve
-        const midX = (sourceNode.x! + targetNode.x!) / 2;
-        const midY = (sourceNode.y! + targetNode.y!) / 2;
-        
-        // Quadratic bezier formula
-        const x = mt * mt * sourceNode.x! + 2 * mt * t * midX + t * t * targetNode.x!;
-        const y = mt * mt * sourceNode.y! + 2 * mt * t * midY + t * t * targetNode.y!;
-        
-        // Subtle pulsing effect
-        const pulse = Math.sin(Date.now() / 2000 + d.linkIndex * 5) * 0.1 + 0.9;
-        
-        d3.select(this)
-          .attr("cx", x)
-          .attr("cy", y)
-          .attr("opacity", d.brightness * pulse)
-          .attr("r", d.size * pulse);
+        return (sourceNode.y || 0) + ((targetNode.y || 0) - (sourceNode.y || 0)) * d.progress;
       });
     }
     
@@ -595,71 +576,27 @@ export default function GraphMotion() {
     animate();
     
     // Drag functions with proper type handling
-    function dragstarted(event: d3.D3DragEvent<SVGGElement, Node, Node>, d: Node) {
-      if (!event.active) simulation.alphaTarget(0.5).restart();
-      d.fx = d.x;
-      d.fy = d.y;
-      
-      d3.select(event.sourceEvent.target.parentNode)
-        .select("circle")
-        .transition()
-        .duration(200)
-        .attr("r", d.size * 1.5)
-        .attr("filter", "url(#intense-glow)");
+    function dragstarted(event: d3.D3DragEvent<SVGGElement, Node, Node>) {
+      if (!event.active) simulation.alphaTarget(0.3).restart();
+      event.subject.fx = event.subject.x;
+      event.subject.fy = event.subject.y;
     }
     
-    function dragged(event: d3.D3DragEvent<SVGGElement, Node, Node>, d: Node) {
-      d.fx = event.x;
-      d.fy = event.y;
-      
-      const connectedLinks = links.filter(l => 
-        (typeof l.source === 'string' ? l.source === d.id : l.source.id === d.id) || 
-        (typeof l.target === 'string' ? l.target === d.id : l.target.id === d.id)
-      );
-      
-      connectedLinks.forEach(l => {
-        const connectedNode = 
-          (typeof l.source === 'string' ? l.source === d.id : l.source.id === d.id) 
-            ? (typeof l.target === 'string' ? nodes.find(n => n.id === l.target) : l.target)
-            : (typeof l.source === 'string' ? nodes.find(n => n.id === l.source) : l.source);
-            
-        if (connectedNode) {
-          const dx = event.x - (connectedNode.x || 0);
-          const dy = event.y - (connectedNode.y || 0);
-          const dist = Math.sqrt(dx * dx + dy * dy);
-          
-          if (dist > 0) {
-            const scale = 0.1;
-            connectedNode.vx = (connectedNode.vx || 0) + dx * scale / dist;
-            connectedNode.vy = (connectedNode.vy || 0) + dy * scale / dist;
-          }
-        }
-      });
+    function dragged(event: d3.D3DragEvent<SVGGElement, Node, Node>) {
+      event.subject.fx = event.x;
+      event.subject.fy = event.y;
     }
     
-    function dragended(event: d3.D3DragEvent<SVGGElement, Node, Node>, d: Node) {
-      if (!event.active) simulation.alphaTarget(0.2).alphaDecay(0.01);
-      
-      d.vx = (Math.random() - 0.5) * 2;
-      d.vy = (Math.random() - 0.5) * 2;
-      
-      setTimeout(() => {
-        d.fx = undefined;
-        d.fy = undefined;
-      }, 100);
-      
-      d3.select(event.sourceEvent.target.parentNode)
-        .select("circle")
-        .transition()
-        .duration(500)
-        .attr("r", d.size)
-        .attr("filter", d.glow ? "url(#intense-glow)" : "url(#glow)");
+    function dragended(event: d3.D3DragEvent<SVGGElement, Node, Node>) {
+      if (!event.active) simulation.alphaTarget(0);
+      event.subject.fx = null;
+      event.subject.fy = null;
     }
-    
-    return () => {
-      simulation.stop();
-    };
   }, []);
+
+  useEffect(() => {
+    createGraph();
+  }, [createGraph]);
 
   return (
     <div className="w-full h-full flex items-center justify-center overflow-hidden">

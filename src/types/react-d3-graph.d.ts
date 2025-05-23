@@ -4,22 +4,26 @@ declare module 'react-d3-graph' {
   export interface GraphData {
     nodes: Array<{
       id: string;
-      [key: string]: any;
+      [key: string]: unknown;
     }>;
     links: Array<{
       source: string;
       target: string;
-      [key: string]: any;
+      [key: string]: unknown;
     }>;
+  }
+
+  export interface GraphConfig {
+    [key: string]: unknown;
   }
 
   export interface GraphProps {
     id: string;
     data: GraphData;
-    config?: any;
+    config?: GraphConfig;
     onClickNode?: (nodeId: string) => void;
     onClickLink?: (source: string, target: string) => void;
-    [key: string]: any;
+    [key: string]: unknown;
   }
 
   export const Graph: ComponentType<GraphProps>;

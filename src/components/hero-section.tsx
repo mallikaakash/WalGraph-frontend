@@ -15,7 +15,7 @@ export function HeroSection() {
               
               <span className="block text-5xl sm:text-6xl md:text-7xl lg:text-8xl font-bold text-white mt-2 font-inter" 
                 style={{ letterSpacing: "-1px" }}>
-                <span className="font-normal text-gray-100">  World's 1st </span>
+                <span className="font-normal text-gray-100">  World&apos;s 1st </span>
                 Decentralized GraphDB
               </span>
             </h1>

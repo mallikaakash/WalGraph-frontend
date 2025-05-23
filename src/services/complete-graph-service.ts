@@ -19,6 +19,9 @@ import {
 import { WalrusService } from './walrus-service';
 import { SuiGraphService } from './sui-service';
 
+type PropertyValue = string | number | boolean | object;
+type SignAndExecuteFunction = (params: unknown) => Promise<unknown>;
+
 export class CompleteGraphService {
   private walrusService: WalrusService;
   private suiService: SuiGraphService;
@@ -28,7 +31,7 @@ export class CompleteGraphService {
   private reverseAdjacencyList: Map<string, Set<string>> = new Map();
   private nodesByType: Map<string, Set<string>> = new Map();
   private relationshipsByType: Map<string, Set<string>> = new Map();
-  private propertyIndexes: Map<string, Map<any, Set<string>>> = new Map();
+  private propertyIndexes: Map<string, Map<PropertyValue, Set<string>>> = new Map();
 
   constructor() {
     this.walrusService = new WalrusService();
@@ -50,7 +53,7 @@ export class CompleteGraphService {
   /**
    * Create a new node with validation
    */
-  createNode(type: string, properties: Record<string, any> = {}, labels: string[] = []): string {
+  createNode(type: string, properties: Record<string, unknown> = {}, labels: string[] = []): string {
     const id = `node_${uuidv4()}`;
     const now = Date.now();
     
@@ -90,7 +93,7 @@ export class CompleteGraphService {
    */
   updateNode(id: string, updates: {
     type?: string;
-    properties?: Record<string, any>;
+    properties?: Record<string, unknown>;
     labels?: string[];
   }): boolean {
     const node = this.nodes.get(id);
@@ -144,7 +147,7 @@ export class CompleteGraphService {
     type: string,
     sourceId: string,
     targetId: string,
-    properties: Record<string, any> = {},
+    properties: Record<string, unknown> = {},
     weight?: number
   ): string {
     // Validate nodes exist
@@ -191,7 +194,7 @@ export class CompleteGraphService {
    */
   updateRelationship(id: string, updates: {
     type?: string;
-    properties?: Record<string, any>;
+    properties?: Record<string, unknown>;
     weight?: number;
   }): boolean {
     const rel = this.relationships.get(id);
@@ -276,7 +279,7 @@ export class CompleteGraphService {
 
       // Determine what to return
       if (query.return && query.return.length > 0) {
-        const returnResult = this.processReturnClauses(candidateNodes, candidateRelationships, query.return);
+        const returnResult = this.processReturnClauses(candidateNodes, candidateRelationships);
         resultNodes = returnResult.nodes;
         resultRelationships = returnResult.relationships;
       } else {
@@ -506,7 +509,7 @@ export class CompleteGraphService {
    */
   async saveGraph(
     metadata: { name: string; description: string; isPublic: boolean; tags: string[] },
-    signAndExecute: Function
+    signAndExecute: SignAndExecuteFunction
   ): Promise<{ blobId: string; suiObjectId: string }> {
     try {
       console.log('💾 Saving graph...');
@@ -584,7 +587,7 @@ export class CompleteGraphService {
   searchNodes(criteria: {
     type?: string;
     labels?: string[];
-    properties?: Record<string, any>;
+    properties?: Record<string, unknown>;
     textSearch?: string;
   }): GraphNode[] {
     let candidates = Array.from(this.nodes.values());
@@ -847,7 +850,7 @@ export class CompleteGraphService {
     });
   }
 
-  private evaluateWhereClause(value: any, operator: string, expectedValue: any): boolean {
+  private evaluateWhereClause(value: unknown, operator: string, expectedValue: unknown): boolean {
     switch (operator) {
       case '=': return value === expectedValue;
       case '!=': return value !== expectedValue;
@@ -884,10 +887,11 @@ export class CompleteGraphService {
 
   private processReturnClauses(
     nodes: GraphNode[],
-    relationships: GraphRelationship[],
-    returnClauses: ReturnClause[]
+    relationships: GraphRelationship[]
   ): { nodes: GraphNode[]; relationships: GraphRelationship[] } {
-    // Simplified implementation
+    // Simplified implementation - just return the input for now
+    // In a full implementation, this would filter and transform the results
+    // based on the RETURN clauses in the query
     return { nodes, relationships };
   }
 } 

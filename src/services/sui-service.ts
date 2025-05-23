@@ -4,6 +4,42 @@ import { fromB64 } from '@mysten/sui/utils';
 import { GraphMetadata, StorageError } from './types';
 import { CONSTANTS } from '../constants';
 
+type ObjectChange = {
+  type: string;
+  objectType?: string;
+  objectId: string;
+  [key: string]: unknown;
+};
+
+type TransactionResult = {
+  effects?: {
+    status?: {
+      status: string;
+    };
+  };
+  objectChanges?: ObjectChange[];
+  [key: string]: unknown;
+};
+
+type SignAndExecuteFunction = (params: {
+  transaction: Transaction;
+  options?: {
+    showEffects?: boolean;
+    showObjectChanges?: boolean;
+    showEvents?: boolean;
+  };
+}) => Promise<TransactionResult>;
+
+type SubscriptionCallback = (event: {
+  parsedJson?: {
+    graphId?: string;
+    owner?: string;
+    name?: string;
+    [key: string]: unknown;
+  };
+  [key: string]: unknown;
+}) => void;
+
 export class SuiGraphService {
   private client: SuiClient;
   private packageId: string;
@@ -23,7 +59,7 @@ export class SuiGraphService {
    * Set package and registry IDs after deployment (deprecated - now using constants)
    */
   setContractAddresses(packageId: string, registryId: string) {
-    // This method is kept for backward compatibility but now uses constants
+    // Parameters intentionally unused - kept for backward compatibility
     console.log('Using constants for contract addresses:', CONSTANTS.packageId, CONSTANTS.registryId);
   }
 
@@ -40,7 +76,7 @@ export class SuiGraphService {
       isPublic: boolean;
       tags: string[];
     },
-    signAndExecute: Function
+    signAndExecute: SignAndExecuteFunction
   ): Promise<string> {
     try {
       if (!this.packageId || !this.registryId) {
@@ -144,13 +180,13 @@ export class SuiGraphService {
 
       // Extract created object ID
       const created = result.objectChanges.find(
-        (change: any) => change.type === 'created' && 
+        (change: ObjectChange) => change.type === 'created' && 
                         change.objectType?.includes('GraphMetadata')
       );
 
       if (!created) {
         console.error('❌ No GraphMetadata object created. Available object changes:', result.objectChanges);
-        const createdObjects = result.objectChanges.filter((change: any) => change.type === 'created');
+        const createdObjects = result.objectChanges.filter((change: ObjectChange) => change.type === 'created');
         console.error('❌ All created objects:', createdObjects);
         throw new Error('Failed to create graph metadata object. No GraphMetadata object found in transaction result.');
       }
@@ -185,7 +221,7 @@ export class SuiGraphService {
       isPublic: boolean;
       tags: string[];
     },
-    signAndExecute: Function
+    signAndExecute: SignAndExecuteFunction
   ): Promise<void> {
     try {
       console.log('📡 Updating SUI graph metadata...');
@@ -198,7 +234,6 @@ export class SuiGraphService {
         target: `${this.packageId}::graph_metadata::update_graph_metadata`,
         arguments: [
           tx.object(graphId),
-          tx.object(this.registryId),
           tx.pure.vector('u8', Array.from(new TextEncoder().encode(metadata.name))),
           tx.pure.vector('u8', Array.from(new TextEncoder().encode(metadata.description))),
           tx.pure.vector('u8', Array.from(new TextEncoder().encode(metadata.blobId))),
@@ -208,43 +243,26 @@ export class SuiGraphService {
           tx.pure.vector('vector<u8>', metadata.tags.map(tag => 
             Array.from(new TextEncoder().encode(tag))
           )),
-          tx.object('0x6'), // System clock object
+          tx.object('0x6'), // System clock
         ],
       });
-
-      console.log('📡 Executing update transaction...');
 
       const result = await signAndExecute({
         transaction: tx,
         options: {
           showEffects: true,
           showObjectChanges: true,
-          showEvents: true,
         },
       });
 
-      console.log('📡 Update transaction result:', result);
-
-      // Enhanced error checking for update
       if (!result) {
-        throw new Error('Update transaction failed: No result returned');
-      }
-
-      if (result.effects?.status?.status !== 'success') {
-        console.error('❌ Transaction status:', result.effects?.status);
-        throw new Error(`Update transaction failed with status: ${result.effects?.status?.status || 'unknown'}`);
+        throw new Error('Transaction failed');
       }
 
       console.log('✅ Graph metadata updated on SUI');
 
     } catch (error) {
       console.error('❌ Error updating metadata on SUI:', error);
-      console.error('❌ Update error details:', {
-        message: error instanceof Error ? error.message : String(error),
-        graphId,
-        packageId: this.packageId,
-        registryId: this.registryId
-      });
       throw new StorageError('Failed to update graph metadata on SUI', 'update', error);
     }
   }

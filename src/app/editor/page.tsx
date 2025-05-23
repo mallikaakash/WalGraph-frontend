@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import * as d3 from 'd3';
 import {
@@ -10,22 +10,16 @@ import {
   useSuiClient
 } from '@mysten/dapp-kit';
 import { CompleteGraphService } from '@/services/complete-graph-service';
-import { WalrusService } from '@/services/walrus-service';
-import { SuiGraphService } from '@/services/sui-service';
 import {
   GraphNode,
   GraphRelationship,
-  GraphQuery,
   QueryResult,
   GraphStats
 } from '@/services/types';
 import {
   Play,
   Save,
-  Upload,
-  Download,
   Database,
-  Network,
   Search,
   BarChart3,
   Plus,
@@ -65,6 +59,10 @@ interface D3Link {
   relationship: GraphRelationship;
 }
 
+interface TransactionParams {
+  transaction: unknown;
+}
+
 export default function GraphEditorPage() {
   // Refs for D3
   const svgRef = useRef<SVGSVGElement>(null);
@@ -91,13 +89,13 @@ export default function GraphEditorPage() {
   });
 
   // Create a proper signAndExecute function for the SUI service
-  const signAndExecute = (params: any): Promise<any> => {
+  const signAndExecute = (params: TransactionParams): Promise<unknown> => {
     return new Promise((resolve, reject) => {
       console.log('🔄 Wallet: Executing transaction...', params);
       
       signAndExecuteTransaction(
         {
-          transaction: params.transaction,
+          transaction: params.transaction as string,
           chain: 'sui:testnet', // Specify the chain
         },
         {
@@ -117,8 +115,6 @@ export default function GraphEditorPage() {
 
   // Services
   const [graphService] = useState(() => new CompleteGraphService());
-  const [walrusService] = useState(() => new WalrusService());
-  const [suiService] = useState(() => new SuiGraphService());
 
   // State
   const [state, setState] = useState<EditorState>({
@@ -150,150 +146,25 @@ export default function GraphEditorPage() {
     tags: 'graph,demo'
   });
 
+  // Define updateState function
+  const updateState = useCallback(() => {
+    const stats = graphService.getStats();
+    setState(prev => ({
+      ...prev,
+      nodes: graphService.getNodes(),
+      relationships: graphService.getRelationships(),
+      stats
+    }));
+  }, [graphService]);
+
   // Initialize graph service
   useEffect(() => {
     updateState();
     console.log('📋 Graph editor initialized. Click "Create Sample Graph" to see visualization.');
-  }, []);
+  }, [updateState]);
 
-  // Initialize D3 visualization with responsive sizing
-  useEffect(() => {
-    if (!svgRef.current || !containerRef.current) return;
-
-    const container = containerRef.current;
-    const svg = d3.select(svgRef.current);
-
-    // Get actual container dimensions
-    const rect = container.getBoundingClientRect();
-    const width = Math.max(800, rect.width - 40); // Minimum 800px width
-    const height = Math.max(600, rect.height - 40); // Minimum 600px height
-
-    console.log('🖼️ Initializing D3 with dimensions:', { width, height });
-
-    // Set SVG size and viewBox to match container
-    svg
-      .attr('width', width)
-      .attr('height', height)
-      .attr('viewBox', `0 0 ${width} ${height}`);
-
-    // Clear previous content
-    svg.selectAll("*").remove();
-
-    // Create background with subtle grid
-    const defs = svg.append('defs');
-
-    // Add glow filters for Obsidian-like effects
-    const glowFilter = defs.append('filter')
-      .attr('id', 'glow')
-      .attr('x', '-50%')
-      .attr('y', '-50%')
-      .attr('width', '200%')
-      .attr('height', '200%');
-
-    glowFilter.append('feGaussianBlur')
-      .attr('stdDeviation', '4')
-      .attr('result', 'coloredBlur');
-
-    const feMerge = glowFilter.append('feMerge');
-    feMerge.append('feMergeNode').attr('in', 'coloredBlur');
-    feMerge.append('feMergeNode').attr('in', 'SourceGraphic');
-
-    // Add subtle grid pattern
-    const pattern = defs.append('pattern')
-      .attr('id', 'grid')
-      .attr('width', 40)
-      .attr('height', 40)
-      .attr('patternUnits', 'userSpaceOnUse');
-
-    pattern.append('path')
-      .attr('d', 'M 40 0 L 0 0 0 40')
-      .attr('fill', 'none')
-      .attr('stroke', 'rgba(100, 255, 255, 0.1)')
-      .attr('stroke-width', 1);
-
-    // Add background
-    svg.append('rect')
-      .attr('width', width)
-      .attr('height', height)
-      .attr('fill', 'url(#grid)')
-      .attr('opacity', 0.3);
-
-    // Create container group for zooming/panning
-    const graphContainer = svg.append("g").attr("class", "graph-container");
-
-    // Add zoom behavior with smooth transitions
-    const zoom = d3.zoom<SVGSVGElement, unknown>()
-      .scaleExtent([0.1, 5])
-      .on("zoom", (event) => {
-        graphContainer.attr("transform", event.transform);
-      });
-
-    svg.call(zoom);
-
-    // Create simulation with Obsidian-like physics
-    const simulation = d3.forceSimulation<D3Node>()
-      .force("link", d3.forceLink<D3Node, D3Link>()
-        .id(d => d.id)
-        .distance(150) // Increased distance for better spacing
-        .strength(0.6) // Reduced strength for more elastic feel
-      )
-      .force("charge", d3.forceManyBody()
-        .strength(-1200) // Stronger repulsion
-        .distanceMin(50)
-        .distanceMax(500)
-      )
-      .force("center", d3.forceCenter(width / 2, height / 2))
-      .force("collision", d3.forceCollide()
-        .radius(45) // Larger collision radius
-        .strength(0.8)
-      )
-      // Add bounds force to keep nodes in view
-      .force("bounds", () => {
-        simulation.nodes().forEach(node => {
-          if (node.x !== undefined && node.y !== undefined) {
-            node.x = Math.max(60, Math.min(width - 60, node.x));
-            node.y = Math.max(60, Math.min(height - 60, node.y));
-          }
-        });
-      })
-      .alphaDecay(0.01) // Slower decay for longer animation
-      .velocityDecay(0.3) // More elastic movement
-      .alpha(1);
-
-    simulationRef.current = simulation;
-
-    // Handle window resize
-    const handleResize = () => {
-      if (!containerRef.current) return;
-      const newRect = containerRef.current.getBoundingClientRect();
-      const newWidth = Math.max(800, newRect.width - 40);
-      const newHeight = Math.max(600, newRect.height - 40);
-
-      svg
-        .attr('width', newWidth)
-        .attr('height', newHeight)
-        .attr('viewBox', `0 0 ${newWidth} ${newHeight}`);
-
-      simulation.force("center", d3.forceCenter(newWidth / 2, newHeight / 2));
-      simulation.alpha(0.3).restart();
-    };
-
-    window.addEventListener('resize', handleResize);
-
-    return () => {
-      window.removeEventListener('resize', handleResize);
-      if (simulationRef.current) {
-        simulationRef.current.stop();
-      }
-    };
-  }, []);
-
-  // Update visualization when data changes
-  useEffect(() => {
-    updateVisualization();
-  }, [state.nodes, state.relationships]);
-
-  const updateVisualization = () => {
+  // Define updateVisualization function
+  const updateVisualization = useCallback(() => {
     if (!svgRef.current || !simulationRef.current) return;
 
     console.log('🔄 Updating visualization with:', state.nodes.length, 'nodes and', state.relationships.length, 'relationships');
@@ -549,7 +420,144 @@ export default function GraphEditorPage() {
       // Add a little bounce effect
       simulationRef.current?.alpha(0.3).restart();
     }
-  };
+  }, [state.nodes, state.relationships, onClickNode]);
+
+  // Initialize D3 visualization with responsive sizing
+  useEffect(() => {
+    if (!svgRef.current || !containerRef.current) return;
+
+    const container = containerRef.current;
+    const svg = d3.select(svgRef.current);
+
+    // Get actual container dimensions
+    const rect = container.getBoundingClientRect();
+    const width = Math.max(800, rect.width - 40); // Minimum 800px width
+    const height = Math.max(600, rect.height - 40); // Minimum 600px height
+
+    console.log('🖼️ Initializing D3 with dimensions:', { width, height });
+
+    // Set SVG size and viewBox to match container
+    svg
+      .attr('width', width)
+      .attr('height', height)
+      .attr('viewBox', `0 0 ${width} ${height}`);
+
+    // Clear previous content
+    svg.selectAll("*").remove();
+
+    // Create background with subtle grid
+    const defs = svg.append('defs');
+
+    // Add glow filters for Obsidian-like effects
+    const glowFilter = defs.append('filter')
+      .attr('id', 'glow')
+      .attr('x', '-50%')
+      .attr('y', '-50%')
+      .attr('width', '200%')
+      .attr('height', '200%');
+
+    glowFilter.append('feGaussianBlur')
+      .attr('stdDeviation', '4')
+      .attr('result', 'coloredBlur');
+
+    const feMerge = glowFilter.append('feMerge');
+    feMerge.append('feMergeNode').attr('in', 'coloredBlur');
+    feMerge.append('feMergeNode').attr('in', 'SourceGraphic');
+
+    // Add subtle grid pattern
+    const pattern = defs.append('pattern')
+      .attr('id', 'grid')
+      .attr('width', 40)
+      .attr('height', 40)
+      .attr('patternUnits', 'userSpaceOnUse');
+
+    pattern.append('path')
+      .attr('d', 'M 40 0 L 0 0 0 40')
+      .attr('fill', 'none')
+      .attr('stroke', 'rgba(100, 255, 255, 0.1)')
+      .attr('stroke-width', 1);
+
+    // Add background
+    svg.append('rect')
+      .attr('width', width)
+      .attr('height', height)
+      .attr('fill', 'url(#grid)')
+      .attr('opacity', 0.3);
+
+    // Create container group for zooming/panning
+    const graphContainer = svg.append("g").attr("class", "graph-container");
+
+    // Add zoom behavior with smooth transitions
+    const zoom = d3.zoom<SVGSVGElement, unknown>()
+      .scaleExtent([0.1, 5])
+      .on("zoom", (event) => {
+        graphContainer.attr("transform", event.transform);
+      });
+
+    svg.call(zoom);
+
+    // Create simulation with Obsidian-like physics
+    const simulation = d3.forceSimulation<D3Node>()
+      .force("link", d3.forceLink<D3Node, D3Link>()
+        .id(d => d.id)
+        .distance(150) // Increased distance for better spacing
+        .strength(0.6) // Reduced strength for more elastic feel
+      )
+      .force("charge", d3.forceManyBody()
+        .strength(-1200) // Stronger repulsion
+        .distanceMin(50)
+        .distanceMax(500)
+      )
+      .force("center", d3.forceCenter(width / 2, height / 2))
+      .force("collision", d3.forceCollide()
+        .radius(45) // Larger collision radius
+        .strength(0.8)
+      )
+      // Add bounds force to keep nodes in view
+      .force("bounds", () => {
+        simulation.nodes().forEach(node => {
+          if (node.x !== undefined && node.y !== undefined) {
+            node.x = Math.max(60, Math.min(width - 60, node.x));
+            node.y = Math.max(60, Math.min(height - 60, node.y));
+          }
+        });
+      })
+      .alphaDecay(0.01) // Slower decay for longer animation
+      .velocityDecay(0.3) // More elastic movement
+      .alpha(1);
+
+    simulationRef.current = simulation;
+
+    // Handle window resize
+    const handleResize = () => {
+      if (!containerRef.current) return;
+      const newRect = containerRef.current.getBoundingClientRect();
+      const newWidth = Math.max(800, newRect.width - 40);
+      const newHeight = Math.max(600, newRect.height - 40);
+
+      svg
+        .attr('width', newWidth)
+        .attr('height', newHeight)
+        .attr('viewBox', `0 0 ${newWidth} ${newHeight}`);
+
+      simulation.force("center", d3.forceCenter(newWidth / 2, newHeight / 2));
+      simulation.alpha(0.3).restart();
+    };
+
+    window.addEventListener('resize', handleResize);
+
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      if (simulationRef.current) {
+        simulationRef.current.stop();
+      }
+    };
+  }, []);
+
+  // Update visualization when data changes
+  useEffect(() => {
+    updateVisualization();
+  }, [updateVisualization]);
 
   const getNodeColor = (type: string): string => {
     const colors: Record<string, string> = {
@@ -562,46 +570,9 @@ export default function GraphEditorPage() {
     return colors[type] || '#6366f1'; // Default indigo
   };
 
-  const updateState = () => {
-    const { nodes, relationships } = graphService.getAllData();
-    const stats = graphService.getGraphStats();
-
-    console.log('📊 State update:', {
-      nodeCount: nodes.length,
-      relationshipCount: relationships.length,
-      nodes: nodes.map(n => ({ id: n.id, type: n.type, name: n.properties.name }))
-    });
-
-    setState(prev => ({ ...prev, nodes, relationships, stats }));
-  };
-
-  // Add sample data function
-  const createSampleData = () => {
-    try {
-      // Clear existing data first
-      graphService.clearGraph();
-
-      // Create sample nodes
-      const aliceId = graphService.createNode('Person', { name: 'Alice', age: 30 });
-      const bobId = graphService.createNode('Person', { name: 'Bob', age: 25 });
-      const charlieId = graphService.createNode('Person', { name: 'Charlie', age: 28 });
-      const techCorpId = graphService.createNode('Company', { name: 'TechCorp', founded: 2020 });
-      const productId = graphService.createNode('Product', { name: 'WebApp', version: '2.0' });
-
-      // Create sample relationships
-      graphService.createRelationship('KNOWS', aliceId, bobId, { since: '2020' });
-      graphService.createRelationship('KNOWS', bobId, charlieId, { since: '2021' });
-      graphService.createRelationship('WORKS_AT', aliceId, techCorpId, { role: 'Engineer' });
-      graphService.createRelationship('WORKS_AT', bobId, techCorpId, { role: 'Designer' });
-      graphService.createRelationship('DEVELOPS', techCorpId, productId, { responsibility: 100 });
-
-      updateState();
-      console.log('✅ Sample graph data loaded!');
-      console.log('Nodes created:', graphService.getAllData().nodes.length);
-      console.log('Relationships created:', graphService.getAllData().relationships.length);
-    } catch (error) {
-      console.log('Note: Could not create sample data, starting with empty graph');
-    }
+  const onClickNode = (nodeId: string) => {
+    const node = graphService.getNode(nodeId);
+    setState(prev => ({ ...prev, selectedNode: node }));
   };
 
   // ==========================
@@ -709,7 +680,7 @@ export default function GraphEditorPage() {
     // Simple CREATE parser: CREATE (n:Type {prop: value})
     const match = command.match(/CREATE \((\w+):(\w+)\s*(\{[^}]*\})?\)/);
     if (match) {
-      const [, variable, type, propsStr] = match;
+      const [, , type, propsStr] = match;
       const properties = propsStr ? JSON.parse(propsStr.replace(/(\w+):/g, '"$1":')) : {};
       graphService.createNode(type, properties);
     }
@@ -802,11 +773,6 @@ export default function GraphEditorPage() {
   // EVENT HANDLERS
   // ==========================
 
-  const onClickNode = (nodeId: string) => {
-    const node = graphService.getNode(nodeId);
-    setState(prev => ({ ...prev, selectedNode: node }));
-  };
-
   // ==========================
   // UTILITY FUNCTIONS
   // ==========================
@@ -820,6 +786,35 @@ export default function GraphEditorPage() {
     console.error('❌', message);
     setState(prev => ({ ...prev, error: message }));
     // You could replace this with a toast notification
+  };
+
+  // Add createSampleData function
+  const createSampleData = () => {
+    try {
+      // Clear existing data first
+      graphService.clearGraph();
+
+      // Create sample nodes
+      const aliceId = graphService.createNode('Person', { name: 'Alice', age: 30 });
+      const bobId = graphService.createNode('Person', { name: 'Bob', age: 25 });
+      const charlieId = graphService.createNode('Person', { name: 'Charlie', age: 28 });
+      const techCorpId = graphService.createNode('Company', { name: 'TechCorp', founded: 2020 });
+      const productId = graphService.createNode('Product', { name: 'WebApp', version: '2.0' });
+
+      // Create sample relationships
+      graphService.createRelationship('KNOWS', aliceId, bobId, { since: '2020' });
+      graphService.createRelationship('KNOWS', bobId, charlieId, { since: '2021' });
+      graphService.createRelationship('WORKS_AT', aliceId, techCorpId, { role: 'Engineer' });
+      graphService.createRelationship('WORKS_AT', bobId, techCorpId, { role: 'Designer' });
+      graphService.createRelationship('DEVELOPS', techCorpId, productId, { responsibility: 100 });
+
+      updateState();
+      console.log('✅ Sample graph data loaded!');
+      console.log('Nodes created:', graphService.getAllData().nodes.length);
+      console.log('Relationships created:', graphService.getAllData().relationships.length);
+    } catch (errorMessage) {
+      console.log('Note: Could not create sample data, starting with empty graph', errorMessage);
+    }
   };
 
   return (

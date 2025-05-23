@@ -2,7 +2,7 @@
 export interface GraphNode {
   id: string;
   type: string;
-  properties: Record<string, any>;
+  properties: Record<string, unknown>;
   labels: string[];
   createdAt: number;
   updatedAt: number;
@@ -13,7 +13,7 @@ export interface GraphRelationship {
   type: string;
   sourceId: string;
   targetId: string;
-  properties: Record<string, any>;
+  properties: Record<string, unknown>;
   weight?: number;
   createdAt: number;
   updatedAt: number;
@@ -36,7 +36,7 @@ export interface QueryResult {
   nodes: GraphNode[];
   relationships: GraphRelationship[];
   paths?: GraphPath[];
-  aggregations?: Record<string, any>;
+  aggregations?: Record<string, unknown>;
   executionTime: number;
   totalResults: number;
 }
@@ -53,13 +53,13 @@ export interface MatchPattern {
   nodePattern?: {
     variable?: string;
     labels?: string[];
-    properties?: Record<string, any>;
+    properties?: Record<string, unknown>;
   };
   relationshipPattern?: {
     variable?: string;
     type?: string;
     direction?: 'in' | 'out' | 'both';
-    properties?: Record<string, any>;
+    properties?: Record<string, unknown>;
   };
 }
 
@@ -72,15 +72,19 @@ export interface GraphQuery {
   skip?: number;
 }
 
+export type ComparisonOperator = '=' | '!=' | '<' | '>' | '<=' | '>=' | 'CONTAINS' | 'STARTS_WITH' | 'ENDS_WITH' | 'IN' | 'NOT_IN';
+
 export interface WhereClause {
   property: string;
-  operator: '=' | '!=' | '<' | '>' | '<=' | '>=' | 'CONTAINS' | 'STARTS_WITH' | 'ENDS_WITH' | 'IN' | 'NOT_IN';
-  value: any;
+  operator: ComparisonOperator;
+  value: unknown;
 }
+
+export type AggregationFunction = 'COUNT' | 'SUM' | 'AVG' | 'MIN' | 'MAX' | 'COLLECT';
 
 export interface ReturnClause {
   variable: string;
-  aggregation?: 'COUNT' | 'SUM' | 'AVG' | 'MIN' | 'MAX' | 'COLLECT';
+  aggregation?: AggregationFunction;
   property?: string;
   alias?: string;
 }
@@ -121,7 +125,7 @@ export interface GraphMetadata {
 
 // JSON-LD Types
 export interface JsonLdContext {
-  "@context": Record<string, any>;
+  "@context": Record<string, unknown>;
 }
 
 export interface JsonLdGraphData extends JsonLdContext {
@@ -141,7 +145,7 @@ export interface JsonLdNode {
   "@id": string;
   nodeType: string;
   labels: string[];
-  properties: Record<string, any>;
+  properties: Record<string, unknown>;
   createdAt: number;
   updatedAt: number;
 }
@@ -152,7 +156,7 @@ export interface JsonLdRelationship {
   relationType: string;
   source: string;
   target: string;
-  properties: Record<string, any>;
+  properties: Record<string, unknown>;
   weight?: number;
   createdAt: number;
   updatedAt: number;
@@ -191,11 +195,11 @@ export interface CentralityMeasure {
 export interface GraphError {
   code: string;
   message: string;
-  details?: any;
+  details?: unknown;
 }
 
 export class GraphValidationError extends Error {
-  constructor(message: string, public details?: any) {
+  constructor(message: string, public details?: unknown) {
     super(message);
     this.name = 'GraphValidationError';
   }
@@ -209,7 +213,7 @@ export class QueryParseError extends Error {
 }
 
 export class StorageError extends Error {
-  constructor(message: string, public operation?: string, public details?: any) {
+  constructor(message: string, public operation?: string, public details?: unknown) {
     super(message);
     this.name = 'StorageError';
   }
