@@ -193,8 +193,8 @@ interface Node extends d3.SimulationNodeDatum {
   icon: string;
   size: number;
   glow: boolean;
-  fx?: number;
-  fy?: number;
+  fx?: number | null;
+  fy?: number | null;
   vx?: number;
   vy?: number;
 }
@@ -592,6 +592,7 @@ export default function GraphMotion() {
       event.subject.fx = null;
       event.subject.fy = null;
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {

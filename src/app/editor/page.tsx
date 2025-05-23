@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import * as d3 from 'd3';
+import { type Transaction } from '@mysten/sui/transactions';
 import {
   ConnectButton,
   useCurrentAccount,
@@ -95,7 +96,7 @@ export default function GraphEditorPage() {
       
       signAndExecuteTransaction(
         {
-          transaction: params.transaction as string,
+          transaction: params.transaction as Transaction,
           chain: 'sui:testnet', // Specify the chain
         },
         {
@@ -570,10 +571,10 @@ export default function GraphEditorPage() {
     return colors[type] || '#6366f1'; // Default indigo
   };
 
-  const onClickNode = (nodeId: string) => {
+  const onClickNode = useCallback((nodeId: string) => {
     const node = graphService.getNode(nodeId);
     setState(prev => ({ ...prev, selectedNode: node }));
-  };
+  }, [graphService]);
 
   // ==========================
   // CRUD OPERATIONS

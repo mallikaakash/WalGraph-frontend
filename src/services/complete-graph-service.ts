@@ -10,7 +10,6 @@ import {
   GraphPath,
   MatchPattern,
   WhereClause,
-  ReturnClause,
   OrderByClause,
   GraphValidationError,
   QueryParseError,
