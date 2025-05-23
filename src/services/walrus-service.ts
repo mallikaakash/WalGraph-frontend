@@ -342,7 +342,8 @@ export class WalrusService {
 
     // Compact the JSON-LD document
     try {
-      const compacted = await jsonld.compact(document, this.CONTEXT["@context"]);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const compacted = await jsonld.compact(document as any, this.CONTEXT["@context"]);
       return compacted as unknown as JsonLdGraphData;
     } catch (error) {
       console.warn('JSON-LD compaction failed, returning uncompacted:', error);

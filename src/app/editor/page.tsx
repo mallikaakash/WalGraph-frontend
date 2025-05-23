@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import * as d3 from 'd3';
-import { type Transaction } from '@mysten/sui/transactions';
+import { Transaction } from '@mysten/sui/transactions';
 import {
   ConnectButton,
   useCurrentAccount,
@@ -90,13 +90,16 @@ export default function GraphEditorPage() {
   });
 
   // Create a proper signAndExecute function for the SUI service
-  const signAndExecute = (params: TransactionParams): Promise<unknown> => {
+  const signAndExecute = (params: unknown): Promise<unknown> => {
     return new Promise((resolve, reject) => {
       console.log('🔄 Wallet: Executing transaction...', params);
       
+      // Cast params to TransactionParams since we know the structure
+      const transactionParams = params as TransactionParams;
+      
       signAndExecuteTransaction(
         {
-          transaction: params.transaction as Transaction,
+          transaction: transactionParams.transaction as Transaction,
           chain: 'sui:testnet', // Specify the chain
         },
         {
@@ -149,11 +152,12 @@ export default function GraphEditorPage() {
 
   // Define updateState function
   const updateState = useCallback(() => {
-    const stats = graphService.getStats();
+    const { nodes, relationships } = graphService.getAllData();
+    const stats = graphService.getGraphStats();
     setState(prev => ({
       ...prev,
-      nodes: graphService.getNodes(),
-      relationships: graphService.getRelationships(),
+      nodes,
+      relationships,
       stats
     }));
   }, [graphService]);
@@ -163,6 +167,12 @@ export default function GraphEditorPage() {
     updateState();
     console.log('📋 Graph editor initialized. Click "Create Sample Graph" to see visualization.');
   }, [updateState]);
+
+  // Define onClickNode function before updateVisualization
+  const onClickNode = useCallback((nodeId: string) => {
+    const node = graphService.getNode(nodeId);
+    setState(prev => ({ ...prev, selectedNode: node }));
+  }, [graphService]);
 
   // Define updateVisualization function
   const updateVisualization = useCallback(() => {
@@ -333,7 +343,7 @@ export default function GraphEditorPage() {
       .attr("font-weight", "600")
       .style("pointer-events", "none")
       .style("text-shadow", "0 0 4px rgba(0, 0, 0, 0.8)")
-      .text(d => d.properties.name || d.id.slice(0, 6));
+      .text(d => String(d.properties.name || d.id.slice(0, 6)));
 
     // Animate node entrance
     nodeEnter
@@ -571,11 +581,6 @@ export default function GraphEditorPage() {
     return colors[type] || '#6366f1'; // Default indigo
   };
 
-  const onClickNode = useCallback((nodeId: string) => {
-    const node = graphService.getNode(nodeId);
-    setState(prev => ({ ...prev, selectedNode: node }));
-  }, [graphService]);
-
   // ==========================
   // CRUD OPERATIONS
   // ==========================
@@ -722,7 +727,9 @@ export default function GraphEditorPage() {
         description: saveForm.description,
         isPublic: saveForm.isPublic,
         tags
-      }, signAndExecute);
+      }, 
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      signAndExecute as any);
 
       console.log('🎉 Graph save completed:', result);
       showSuccess(`Graph saved! Blob ID: ${result.blobId}`);
@@ -930,7 +937,7 @@ export default function GraphEditorPage() {
                   <option value="">Select Source Node</option>
                   {state.nodes.map(node => (
                     <option key={node.id} value={node.id}>
-                      {node.properties.name || node.id} ({node.type})
+                      {String(node.properties.name || node.id)} ({node.type})
                     </option>
                   ))}
                 </select>
@@ -945,7 +952,7 @@ export default function GraphEditorPage() {
                   <option value="">Select Target Node</option>
                   {state.nodes.map(node => (
                     <option key={node.id} value={node.id}>
-                      {node.properties.name || node.id} ({node.type})
+                      {String(node.properties.name || node.id)} ({node.type})
                     </option>
                   ))}
                 </select>

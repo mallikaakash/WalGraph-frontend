@@ -19,6 +19,7 @@ import { WalrusService } from './walrus-service';
 import { SuiGraphService } from './sui-service';
 
 type PropertyValue = string | number | boolean | object;
+// Import the types from sui-service to ensure compatibility
 type SignAndExecuteFunction = (params: unknown) => Promise<unknown>;
 
 export class CompleteGraphService {
@@ -529,7 +530,9 @@ export class CompleteGraphService {
         relationshipCount: relationships.length,
         isPublic: metadata.isPublic,
         tags: metadata.tags
-      }, signAndExecute);
+      }, 
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      signAndExecute as any); // Cast to resolve type mismatch
 
       console.log('✅ Graph saved successfully!');
       
@@ -668,12 +671,12 @@ export class CompleteGraphService {
     // Update property indexes (for common searchable properties)
     const indexableProps = ['name', 'title', 'email', 'status'];
     indexableProps.forEach(prop => {
-      if (node.properties[prop] !== undefined) {
+      if (node.properties[prop] !== undefined && node.properties[prop] !== null) {
         if (!this.propertyIndexes.has(prop)) {
           this.propertyIndexes.set(prop, new Map());
         }
         const propIndex = this.propertyIndexes.get(prop)!;
-        const value = node.properties[prop];
+        const value = node.properties[prop] as PropertyValue; // Safe cast after null check
         if (!propIndex.has(value)) {
           propIndex.set(value, new Set());
         }
@@ -853,10 +856,10 @@ export class CompleteGraphService {
     switch (operator) {
       case '=': return value === expectedValue;
       case '!=': return value !== expectedValue;
-      case '<': return value < expectedValue;
-      case '>': return value > expectedValue;
-      case '<=': return value <= expectedValue;
-      case '>=': return value >= expectedValue;
+      case '<': return (value as number) < (expectedValue as number);
+      case '>': return (value as number) > (expectedValue as number);
+      case '<=': return (value as number) <= (expectedValue as number);
+      case '>=': return (value as number) >= (expectedValue as number);
       case 'CONTAINS': return String(value).includes(String(expectedValue));
       case 'STARTS_WITH': return String(value).startsWith(String(expectedValue));
       case 'ENDS_WITH': return String(value).endsWith(String(expectedValue));
@@ -873,8 +876,10 @@ export class CompleteGraphService {
         const bValue = b.properties[clause.property];
         
         let comparison = 0;
-        if (aValue < bValue) comparison = -1;
-        else if (aValue > bValue) comparison = 1;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        if ((aValue as any) < (bValue as any)) comparison = -1;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        else if ((aValue as any) > (bValue as any)) comparison = 1;
         
         if (clause.direction === 'DESC') comparison *= -1;
         
