@@ -1,0 +1,440 @@
+import { SuiClient, getFullnodeUrl } from '@mysten/sui/client';
+import { Transaction } from '@mysten/sui/transactions';
+import { fromB64 } from '@mysten/sui/utils';
+import { GraphMetadata, StorageError } from './types';
+import { CONSTANTS } from '../constants';
+
+export class SuiGraphService {
+  private client: SuiClient;
+  private packageId: string;
+  private registryId: string;
+
+  constructor() {
+    this.client = new SuiClient({ 
+      url: getFullnodeUrl('testnet') // TESTNET COMPULSORY
+    });
+    
+    // Use constants for contract addresses
+    this.packageId = CONSTANTS.packageId;
+    this.registryId = CONSTANTS.registryId;
+  }
+
+  /**
+   * Set package and registry IDs after deployment (deprecated - now using constants)
+   */
+  setContractAddresses(packageId: string, registryId: string) {
+    // This method is kept for backward compatibility but now uses constants
+    console.log('Using constants for contract addresses:', CONSTANTS.packageId, CONSTANTS.registryId);
+  }
+
+  /**
+   * Create graph metadata on SUI after storing data on Walrus
+   */
+  async createGraphMetadata(
+    metadata: {
+      name: string;
+      description: string;
+      blobId: string;
+      nodeCount: number;
+      relationshipCount: number;
+      isPublic: boolean;
+      tags: string[];
+    },
+    signAndExecute: Function
+  ): Promise<string> {
+    try {
+      if (!this.packageId || !this.registryId) {
+        throw new Error('Contract addresses not set. Deploy contract first.');
+      }
+
+      const tx = new Transaction();
+
+      // Get clock object
+      tx.moveCall({
+        target: '0x2::clock::create',
+      });
+
+      // Create graph metadata
+      tx.moveCall({
+        target: `${this.packageId}::graph_metadata::create_graph_metadata`,
+        arguments: [
+          tx.object(this.registryId),
+          tx.pure.vector('u8', Array.from(new TextEncoder().encode(metadata.name))),
+          tx.pure.vector('u8', Array.from(new TextEncoder().encode(metadata.description))),
+          tx.pure.vector('u8', Array.from(new TextEncoder().encode(metadata.blobId))),
+          tx.pure.u64(metadata.nodeCount),
+          tx.pure.u64(metadata.relationshipCount),
+          tx.pure.bool(metadata.isPublic),
+          tx.pure.vector('vector<u8>', metadata.tags.map(tag => 
+            Array.from(new TextEncoder().encode(tag))
+          )),
+          tx.object('0x6'), // Clock object on testnet
+        ],
+      });
+
+      const result = await signAndExecute({
+        transaction: tx,
+        options: {
+          showEffects: true,
+          showObjectChanges: true,
+          showEvents: true,
+        },
+      });
+
+      // Extract created object ID
+      const created = result.objectChanges?.find(
+        (change: any) => change.type === 'created' && 
+                        change.objectType?.includes('GraphMetadata')
+      );
+
+      if (!created) {
+        throw new Error('Failed to create graph metadata object');
+      }
+
+      console.log('✅ Graph metadata created on SUI:', created.objectId);
+      return created.objectId;
+
+    } catch (error) {
+      console.error('❌ Error creating metadata on SUI:', error);
+      throw new StorageError('Failed to create graph metadata on SUI', 'create', error);
+    }
+  }
+
+  /**
+   * Update graph metadata on SUI
+   */
+  async updateGraphMetadata(
+    graphId: string,
+    metadata: {
+      name: string;
+      description: string;
+      blobId: string;
+      nodeCount: number;
+      relationshipCount: number;
+      isPublic: boolean;
+      tags: string[];
+    },
+    signAndExecute: Function
+  ): Promise<void> {
+    try {
+      const tx = new Transaction();
+
+      tx.moveCall({
+        target: `${this.packageId}::graph_metadata::update_graph_metadata`,
+        arguments: [
+          tx.object(graphId),
+          tx.object(this.registryId),
+          tx.pure.vector('u8', Array.from(new TextEncoder().encode(metadata.name))),
+          tx.pure.vector('u8', Array.from(new TextEncoder().encode(metadata.description))),
+          tx.pure.vector('u8', Array.from(new TextEncoder().encode(metadata.blobId))),
+          tx.pure.u64(metadata.nodeCount),
+          tx.pure.u64(metadata.relationshipCount),
+          tx.pure.bool(metadata.isPublic),
+          tx.pure.vector('vector<u8>', metadata.tags.map(tag => 
+            Array.from(new TextEncoder().encode(tag))
+          )),
+          tx.object('0x6'), // Clock object
+        ],
+      });
+
+      await signAndExecute({
+        transaction: tx,
+        options: {
+          showEffects: true,
+          showEvents: true,
+        },
+      });
+
+      console.log('✅ Graph metadata updated on SUI');
+
+    } catch (error) {
+      console.error('❌ Error updating metadata on SUI:', error);
+      throw new StorageError('Failed to update graph metadata on SUI', 'update', error);
+    }
+  }
+
+  /**
+   * Get graph metadata from SUI
+   */
+  async getGraphMetadata(graphId: string): Promise<GraphMetadata | null> {
+    try {
+      const object = await this.client.getObject({
+        id: graphId,
+        options: {
+          showContent: true,
+          showType: true,
+        },
+      });
+
+      if (!object.data?.content || object.data.content.dataType !== 'moveObject') {
+        return null;
+      }
+
+      const fields = (object.data.content as any).fields;
+      
+      return {
+        id: graphId,
+        name: fields.name || 'Untitled',
+        description: fields.description || '',
+        blobId: fields.blob_id || '',
+        owner: fields.owner || '',
+        createdAt: parseInt(fields.created_at) || 0,
+        updatedAt: parseInt(fields.updated_at) || 0,
+        nodeCount: parseInt(fields.node_count) || 0,
+        relationshipCount: parseInt(fields.relationship_count) || 0,
+        isPublic: fields.is_public || false,
+        tags: fields.tags || [],
+        version: parseInt(fields.version) || 1,
+      };
+
+    } catch (error) {
+      console.error('❌ Error getting graph metadata:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Get all graphs owned by a specific address
+   */
+  async getUserGraphs(ownerAddress: string): Promise<GraphMetadata[]> {
+    try {
+      // Query for GraphMetadata objects owned by the user
+      const objects = await this.client.getOwnedObjects({
+        owner: ownerAddress,
+        filter: {
+          StructType: `${this.packageId}::graph_metadata::GraphMetadata`
+        },
+        options: {
+          showContent: true,
+          showType: true,
+        },
+      });
+
+      const graphs: GraphMetadata[] = [];
+      
+      for (const obj of objects.data) {
+        if (obj.data?.content && obj.data.content.dataType === 'moveObject') {
+          const fields = (obj.data.content as any).fields;
+          graphs.push({
+            id: obj.data.objectId,
+            name: fields.name || 'Untitled',
+            description: fields.description || '',
+            blobId: fields.blob_id || '',
+            owner: fields.owner || '',
+            createdAt: parseInt(fields.created_at) || 0,
+            updatedAt: parseInt(fields.updated_at) || 0,
+            nodeCount: parseInt(fields.node_count) || 0,
+            relationshipCount: parseInt(fields.relationship_count) || 0,
+            isPublic: fields.is_public || false,
+            tags: fields.tags || [],
+            version: parseInt(fields.version) || 1,
+          });
+        }
+      }
+
+      return graphs.sort((a, b) => b.updatedAt - a.updatedAt);
+
+    } catch (error) {
+      console.error('❌ Error getting user graphs:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Get public graphs from registry
+   */
+  async getPublicGraphs(): Promise<string[]> {
+    try {
+      if (!this.registryId) {
+        throw new Error('Registry ID not set');
+      }
+
+      // Query registry for public graph IDs
+      const result = await this.client.devInspectTransactionBlock({
+        transactionBlock: (() => {
+          const tx = new Transaction();
+          tx.moveCall({
+            target: `${this.packageId}::graph_metadata::get_public_graph_ids`,
+            arguments: [tx.object(this.registryId)],
+          });
+          return tx;
+        })(),
+        sender: '0x1', // Dummy sender for dev inspect
+      });
+
+      // Parse the result to get graph IDs
+      // Note: This is a simplified implementation
+      return [];
+
+    } catch (error) {
+      console.error('❌ Error getting public graphs:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Get graphs by tag
+   */
+  async getGraphsByTag(tag: string): Promise<string[]> {
+    try {
+      if (!this.registryId) {
+        throw new Error('Registry ID not set');
+      }
+
+      const result = await this.client.devInspectTransactionBlock({
+        transactionBlock: (() => {
+          const tx = new Transaction();
+          tx.moveCall({
+            target: `${this.packageId}::graph_metadata::get_graphs_by_tag`,
+            arguments: [
+              tx.object(this.registryId),
+              tx.pure.string(tag)
+            ],
+          });
+          return tx;
+        })(),
+        sender: '0x1',
+      });
+
+      // Parse result and return graph IDs
+      return [];
+
+    } catch (error) {
+      console.error('❌ Error getting graphs by tag:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Delete graph metadata
+   */
+  async deleteGraphMetadata(
+    graphId: string,
+    signAndExecute: Function
+  ): Promise<void> {
+    try {
+      const tx = new Transaction();
+
+      tx.moveCall({
+        target: `${this.packageId}::graph_metadata::delete_graph_metadata`,
+        arguments: [
+          tx.object(graphId),
+          tx.object(this.registryId),
+        ],
+      });
+
+      await signAndExecute({
+        transaction: tx,
+        options: {
+          showEffects: true,
+          showEvents: true,
+        },
+      });
+
+      console.log('✅ Graph metadata deleted from SUI');
+
+    } catch (error) {
+      console.error('❌ Error deleting metadata from SUI:', error);
+      throw new StorageError('Failed to delete graph metadata from SUI', 'delete', error);
+    }
+  }
+
+  /**
+   * Get registry statistics
+   */
+  async getRegistryStats(): Promise<{ totalGraphs: number }> {
+    try {
+      if (!this.registryId) {
+        return { totalGraphs: 0 };
+      }
+
+      const result = await this.client.devInspectTransactionBlock({
+        transactionBlock: (() => {
+          const tx = new Transaction();
+          tx.moveCall({
+            target: `${this.packageId}::graph_metadata::get_total_graphs`,
+            arguments: [tx.object(this.registryId)],
+          });
+          return tx;
+        })(),
+        sender: '0x1',
+      });
+
+      // Parse result to get total count
+      return { totalGraphs: 0 };
+
+    } catch (error) {
+      console.error('❌ Error getting registry stats:', error);
+      return { totalGraphs: 0 };
+    }
+  }
+
+  /**
+   * Listen for graph events
+   */
+  async subscribeToGraphEvents(
+    callback: (event: any) => void,
+    filter?: { owner?: string }
+  ): Promise<() => void> {
+    try {
+      // Event subscription temporarily disabled due to API changes
+      console.log('Event subscription feature temporarily disabled');
+      return () => {};
+      
+      /*
+      // Subscribe to graph creation events
+      const unsubscribe = await this.client.subscribeEvent({
+        filter: {
+          Package: this.packageId
+        },
+        onMessage: (event) => {
+          // Filter events based on type and optional filters
+          if (event.type.includes('GraphCreated') || 
+              event.type.includes('GraphUpdated') || 
+              event.type.includes('GraphDeleted')) {
+            
+            if (filter?.owner) {
+              const eventData = event.parsedJson as any;
+              if (eventData?.owner === filter.owner) {
+                callback(event);
+              }
+            } else {
+              callback(event);
+            }
+          }
+        },
+      });
+
+      return unsubscribe;
+      */
+
+    } catch (error) {
+      console.error('❌ Error subscribing to events:', error);
+      return () => {}; // Return empty unsubscribe function
+    }
+  }
+
+  /**
+   * Get transaction history for a graph
+   */
+  async getGraphHistory(graphId: string): Promise<any[]> {
+    try {
+      const transactions = await this.client.queryTransactionBlocks({
+        filter: {
+          InputObject: graphId
+        },
+        options: {
+          showEffects: true,
+          showEvents: true,
+          showInput: true,
+        },
+      });
+
+      return transactions.data;
+
+    } catch (error) {
+      console.error('❌ Error getting graph history:', error);
+      return [];
+    }
+  }
+} 
