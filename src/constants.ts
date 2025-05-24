@@ -4,9 +4,9 @@ export const CONSTANTS = {
   packageId: "0xe21c81834611d67b92751acb642d8b6587ce5da730cebace0d5f874015b92afa",
   registryId: "0xc09065c827a619ee2a3206017ddcd748ec89e4ac1520dbef57c2ef27e711d9fc",
   
-  // Walrus Configuration - Using verified working endpoints
-  walrusPublisherUrl: "https://wal-publisher-testnet.staketab.org",
-  walrusAggregatorUrl: "https://wal-aggregator-testnet.staketab.org",
+  // Walrus Configuration - Using working testnet endpoints
+  walrusPublisherUrl: "https://walrus-testnet-publisher.natsai.xyz",
+  walrusAggregatorUrl: "https://walrus-testnet-aggregator.natsai.xyz",
   
   // Network Configuration
   suiNetwork: "testnet" as const,

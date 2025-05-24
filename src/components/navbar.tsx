@@ -8,14 +8,8 @@ export function Navbar() {
       <div className="container mx-auto px-4">
         <div className="flex items-center justify-between h-16">
           <Link href="/" className="flex items-center space-x-2">
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7v10c0 2 1 3 3 3h10c2 0 3-1 3-3V7c0-2-1-3-3-3H7c-2 0-3 1-3 3z" />
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 3v4" />
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 3v4" />
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17h6" />
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 13h8" />
-            </svg>
-            <span className="text-xl font-mono">WebWalrus</span>
+            <img src="/WalGrah.png" alt="WalGraph Logo" className="h-12 w-12" />
+            <span className="text-xl font-mono">WalGraph</span>
           </Link>
 
           <div className="hidden md:flex items-center space-x-8">

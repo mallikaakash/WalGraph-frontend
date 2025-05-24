@@ -40,22 +40,22 @@ export class WalrusService {
       "@version": "1.1" as const,
       "id": "@id",
       "type": "@type",
-      "Graph": "https://webwalrus.dev/ontology#Graph",
-      "Node": "https://webwalrus.dev/ontology#Node",
-      "Relationship": "https://webwalrus.dev/ontology#Relationship",
-      "nodeType": "https://webwalrus.dev/ontology#nodeType",
-      "relationType": "https://webwalrus.dev/ontology#relationType",
-      "source": "https://webwalrus.dev/ontology#source",
-      "target": "https://webwalrus.dev/ontology#target",
-      "properties": "https://webwalrus.dev/ontology#properties",
-      "labels": "https://webwalrus.dev/ontology#labels",
-      "weight": "https://webwalrus.dev/ontology#weight",
+      "Graph": "https://walgraph.dev/ontology#Graph",
+      "Node": "https://walgraph.dev/ontology#Node",
+      "Relationship": "https://walgraph.dev/ontology#Relationship",
+      "nodeType": "https://walgraph.dev/ontology#nodeType",
+      "relationType": "https://walgraph.dev/ontology#relationType",
+      "source": "https://walgraph.dev/ontology#source",
+      "target": "https://walgraph.dev/ontology#target",
+      "properties": "https://walgraph.dev/ontology#properties",
+      "labels": "https://walgraph.dev/ontology#labels",
+      "weight": "https://walgraph.dev/ontology#weight",
       "createdAt": {
-        "@id": "https://webwalrus.dev/ontology#createdAt",
+        "@id": "https://walgraph.dev/ontology#createdAt",
         "@type": "http://www.w3.org/2001/XMLSchema#dateTime"
       },
       "updatedAt": {
-        "@id": "https://webwalrus.dev/ontology#updatedAt", 
+        "@id": "https://walgraph.dev/ontology#updatedAt", 
         "@type": "http://www.w3.org/2001/XMLSchema#dateTime"
       },
       "name": "https://schema.org/name",
@@ -100,7 +100,12 @@ export class WalrusService {
       console.log('🔄 Storing to Walrus...');
       const result = await this.storeBlob(graphData);
       
-      console.log('✅ Successfully stored to Walrus:', result);
+      // Improved logging to distinguish between Walrus and localStorage
+      if (result.blobId.startsWith('local_')) {
+        console.log('⚠️ Used localStorage fallback:', result);
+      } else {
+        console.log('✅ Successfully stored to Walrus:', result);
+      }
       return result;
     } catch (error) {
       console.error('❌ Error storing graph to Walrus:', error);
@@ -169,22 +174,22 @@ export class WalrusService {
    */
   private async storeBlob(data: Record<string, unknown>): Promise<WalrusStorageResult> {
     const jsonString = JSON.stringify(data, null, 2);
-    const blob = new Blob([jsonString], { type: 'application/json' });
     
-    const formData = new FormData();
-    formData.append('file', blob, 'graph.json');
+    // Convert to ArrayBuffer as required by official API
+    const encoder = new TextEncoder();
+    const arrayBuffer = encoder.encode(jsonString);
 
-    const url = `${this.config.publisherUrl}/v1/store`;
+    const url = `${this.config.publisherUrl}/v1/blobs`;
     console.log('🔄 Attempting to store at URL:', url);
-    console.log('🔄 Blob size:', blob.size, 'bytes');
+    console.log('🔄 Data size:', arrayBuffer.length, 'bytes');
 
     try {
       const response = await fetch(url, {
         method: 'PUT',
-        body: formData,
         headers: {
-          // Let the browser set Content-Type for FormData
-        }
+          'Content-Type': 'application/octet-stream',
+        },
+        body: arrayBuffer
       });
 
       console.log('📡 Response status:', response.status, response.statusText);
@@ -192,10 +197,10 @@ export class WalrusService {
 
       if (!response.ok) {
         const errorText = await response.text();
-        console.error('❌ Error response body:', errorText);
+        console.error('❌ Walrus HTTP error:', response.status, errorText);
         
         // Fallback to localStorage if Walrus is not available
-        console.log('⚠️ Walrus not available, using localStorage fallback...');
+        console.log('⚠️ Walrus HTTP error, falling back to localStorage...');
         return this.storeToLocalStorage(data);
       }
 
@@ -204,7 +209,7 @@ export class WalrusService {
         alreadyCertified?: { blobId?: string };
         blobId?: string;
       };
-      console.log('✅ Walrus response:', result);
+      console.log('🌊 Raw Walrus response:', result);
       
       // Handle different response formats from Walrus
       const blobId = result.newlyCreated?.blobObject?.blobId || 
@@ -212,19 +217,25 @@ export class WalrusService {
                      result.blobId;
 
       if (!blobId) {
-        console.error('❌ No blob ID in response:', result);
-        console.log('⚠️ Falling back to localStorage...');
+        console.error('❌ No blob ID in Walrus response:', result);
+        console.log('⚠️ Invalid Walrus response, falling back to localStorage...');
         return this.storeToLocalStorage(data);
       }
 
+      console.log('🎉 Successfully stored to Walrus with blob ID:', blobId);
       return {
         blobId,
-        size: blob.size,
+        size: arrayBuffer.length,
         timestamp: Date.now()
       };
     } catch (error) {
-      console.error('❌ Network error details:', error);
-      console.log('⚠️ Network error, using localStorage fallback...');
+      if (error instanceof TypeError && error.message.includes('fetch')) {
+        console.error('❌ Network/CORS error connecting to Walrus:', error.message);
+        console.log('⚠️ CORS/Network error, falling back to localStorage...');
+      } else {
+        console.error('❌ Unexpected error with Walrus:', error);
+        console.log('⚠️ Unexpected error, falling back to localStorage...');
+      }
       return this.storeToLocalStorage(data);
     }
   }
@@ -260,7 +271,12 @@ export class WalrusService {
       return this.readFromLocalStorage(blobId);
     }
 
-    const response = await fetch(`${this.config.aggregatorUrl}/v1/${blobId}`);
+    const url = `${this.config.aggregatorUrl}/v1/blobs/${blobId}`;
+    console.log('🔄 Reading from Walrus URL:', url);
+    
+    const response = await fetch(url, {
+      method: 'GET',
+    });
     
     if (!response.ok) {
       throw new Error(`Walrus read failed: ${response.status} ${response.statusText}`);

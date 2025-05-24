@@ -16,7 +16,7 @@ export function Footer() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17h6" />
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 13h8" />
               </svg>
-              <span className="text-xl font-mono">WebWalrus</span>
+              <span className="text-xl font-mono">WalGraph</span>
             </Link>
             <p className="text-muted max-w-xs">
               A decentralized graph database powered by Sui blockchain and Walrus protocol for secure, efficient data storage and querying.
@@ -89,7 +89,7 @@ export function Footer() {
         
         <div className="border-t border-border mt-12 pt-8 flex flex-col md:flex-row justify-between items-center">
           <p className="text-sm text-muted">
-            © {new Date().getFullYear()} WebWalrus. All rights reserved.
+            © {new Date().getFullYear()} WalGraph. All rights reserved.
           </p>
           <div className="flex space-x-6 mt-4 md:mt-0">
             <Link href="#" className="text-muted hover:text-foreground transition-colors">

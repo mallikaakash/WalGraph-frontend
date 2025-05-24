@@ -222,15 +222,15 @@ export default function GraphMotion() {
     'zap': Zap
   };
   
-  // Create nodes with various icons
+  // Create nodes with various icons - fewer nodes for cleaner look
   const iconTypes = Object.keys(icons);
-  const nodes: Node[] = Array.from({ length: 16 }, (_, i) => ({
+  const nodes: Node[] = Array.from({ length: 12 }, (_, i) => ({
     id: `node${i}`,
     icon: iconTypes[i % iconTypes.length],
-    size: i === 0 ? 45 : Math.random() * 15 + 20,
-    glow: Math.random() > 0.6,
-    x: Math.random() * 1200,
-    y: Math.random() * 1000,
+    size: i === 0 ? 35 : Math.random() * 12 + 18,
+    glow: Math.random() > 0.7,
+    x: undefined,
+    y: undefined,
     vx: 0,
     vy: 0,
     fx: undefined,
@@ -246,13 +246,13 @@ export default function GraphMotion() {
     links.push({
       source: `node${i}`,
       target: `node${target}`,
-      value: Math.random() * 3 + 1,
+      value: Math.random() * 2 + 1,
       index: undefined
     });
   }
   
-  // Add some additional random connections
-  const extraLinks = Math.floor(nodes.length * 0.5);
+  // Add some additional random connections for more interesting structure
+  const extraLinks = Math.floor(nodes.length * 0.4);
   for (let i = 0; i < extraLinks; i++) {
     const source = Math.floor(Math.random() * nodes.length);
     let target = Math.floor(Math.random() * nodes.length);
@@ -266,7 +266,7 @@ export default function GraphMotion() {
     links.push({
       source: `node${source}`,
       target: `node${target}`,
-      value: Math.random() * 2 + 0.5,
+      value: Math.random() * 1.5 + 0.5,
       index: undefined
     });
   }
@@ -276,8 +276,9 @@ export default function GraphMotion() {
     if (!svgRef.current) return;
 
     const svg = d3.select(svgRef.current);
-    const width = 800;
-    const height = 600;
+    // Match the viewBox dimensions
+    const width = 1000;
+    const height = 800;
 
     // Clear any existing content
     svg.selectAll("*").remove();
@@ -285,7 +286,7 @@ export default function GraphMotion() {
     // Create definitions for filters and gradients
     const defs = svg.append("defs");
     
-    // Create glow filter
+    // Create subtle glow filter (Obsidian-style)
     const filter = defs.append("filter")
       .attr("id", "glow")
       .attr("x", "-50%")
@@ -294,7 +295,7 @@ export default function GraphMotion() {
       .attr("height", "200%");
       
     filter.append("feGaussianBlur")
-      .attr("stdDeviation", "3")
+      .attr("stdDeviation", "2")
       .attr("result", "blur");
       
     filter.append("feComposite")
@@ -302,7 +303,7 @@ export default function GraphMotion() {
       .attr("in2", "blur")
       .attr("operator", "over");
     
-    // Create intense glow filter
+    // Create more intense glow for highlighted nodes
     const intenseGlow = defs.append("filter")
       .attr("id", "intense-glow")
       .attr("x", "-100%")
@@ -311,7 +312,7 @@ export default function GraphMotion() {
       .attr("height", "300%");
       
     intenseGlow.append("feGaussianBlur")
-      .attr("stdDeviation", "12")
+      .attr("stdDeviation", "6")
       .attr("result", "blur");
       
     intenseGlow.append("feComposite")
@@ -319,48 +320,50 @@ export default function GraphMotion() {
       .attr("in2", "blur")
       .attr("operator", "over");
       
-    // Create node gradient
+    // Create node gradient (more subtle, Obsidian-like)
     const nodeGradient = defs.append("radialGradient")
       .attr("id", "nodeGradient");
       
     nodeGradient.append("stop")
       .attr("offset", "0%")
-      .attr("stop-color", "white")
-      .attr("stop-opacity", 1);
-      
-    nodeGradient.append("stop")
-      .attr("offset", "60%")
-      .attr("stop-color", "#eee")
+      .attr("stop-color", "#ffffff")
       .attr("stop-opacity", 0.9);
       
     nodeGradient.append("stop")
+      .attr("offset", "70%")
+      .attr("stop-color", "#e5e5e5")
+      .attr("stop-opacity", 0.7);
+      
+    nodeGradient.append("stop")
       .attr("offset", "100%")
-      .attr("stop-color", "#aaa")
-      .attr("stop-opacity", 0.2);
+      .attr("stop-color", "#999999")
+      .attr("stop-opacity", 0.3);
     
-    // Create the simulation
+    // Create the simulation with better centering
     const simulation = d3.forceSimulation<Node>(nodes)
-      .force("link", d3.forceLink<Node, Link>(links).id(d => d.id).distance(() => 150 + Math.random() * 100).strength(0.2))
-      .force("charge", d3.forceManyBody().strength(() => -300 - Math.random() * 150))
+      .force("link", d3.forceLink<Node, Link>(links)
+        .id(d => d.id)
+        .distance(() => 120 + Math.random() * 60)
+        .strength(0.3))
+      .force("charge", d3.forceManyBody().strength(() => -250 - Math.random() * 100))
       .force("center", d3.forceCenter(width / 2, height / 2))
       .force("collision", d3.forceCollide().radius((node: SimulationNodeDatum) => {
         const n = node as Node;
-        return (n.size || 15) + 25;
-      }).strength(0.8))
-      .force("x", d3.forceX(width / 2).strength(0.03))
-      .force("y", d3.forceY(height / 2).strength(0.03))
-      .alphaDecay(0.008);
+        return (n.size || 15) + 20;
+      }).strength(0.7))
+      .force("x", d3.forceX(width / 2).strength(0.05))
+      .force("y", d3.forceY(height / 2).strength(0.05))
+      .alphaDecay(0.01);
     
-    // Create links with improved visibility
+    // Create links with Obsidian-style appearance
     const link = svg.append("g")
-      .selectAll<SVGPathElement, Link>("path")
+      .selectAll<SVGLineElement, Link>("line")
       .data(links)
-      .join("path")
-      .attr("stroke", "rgba(255, 255, 255, 0.3)") // Brighter links
-      .attr("stroke-width", d => Math.sqrt(d.value || 1) * 1.2) // Thicker lines
-      .attr("fill", "none")
+      .join("line")
+      .attr("stroke", "rgba(255, 255, 255, 0.2)")
+      .attr("stroke-width", d => Math.sqrt(d.value || 1) * 0.8)
       .attr("stroke-linecap", "round")
-      .attr("stroke-dasharray", "1, 4"); // More visible dash pattern
+      .attr("opacity", 0.6);
     
     // Create node groups
     const node = svg.append("g")
@@ -368,35 +371,35 @@ export default function GraphMotion() {
       .data(nodes)
       .join("g")
       .attr("class", "node")
+      .style("cursor", "grab")
       .call(d3.drag<SVGGElement, Node>()
         .on("start", dragstarted)
         .on("drag", dragged)
         .on("end", dragended));
     
-    // Add node circles
+    // Add node circles with Obsidian-style appearance
     node.append("circle")
       .attr("r", d => d.size)
       .attr("fill", "url(#nodeGradient)")
       .attr("filter", d => d.glow ? "url(#intense-glow)" : "url(#glow)")
-      .attr("opacity", 0.9);
+      .attr("opacity", 0.85)
+      .attr("stroke", "rgba(255, 255, 255, 0.4)")
+      .attr("stroke-width", 1);
     
     // Add SVG foreign objects for the Lucide icons
     node.append("foreignObject")
-      .attr("width", d => d.size * 2)
-      .attr("height", d => d.size * 2)
-      .attr("x", d => -(d.size))
-      .attr("y", d => -(d.size))
+      .attr("width", d => d.size * 1.6)
+      .attr("height", d => d.size * 1.6)
+      .attr("x", d => -(d.size * 0.8))
+      .attr("y", d => -(d.size * 0.8))
       .html(d => {
-        const iconSize = d.size * 1.2;
+        const iconSize = d.size * 1.0;
         return `<div style="width: 100%; height: 100%; display: flex; align-items: center; justify-content: center;">
-          <svg width="${iconSize}" height="${iconSize}" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="filter: drop-shadow(0 0 8px rgba(255,255,255,0.8));">
+          <svg width="${iconSize}" height="${iconSize}" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="filter: drop-shadow(0 0 4px rgba(255,255,255,0.6)); opacity: 0.9;">
             ${getIconPath(d.icon)}
           </svg>
         </div>`;
       });
-    
-    // Create particles along the links
-    const particlesGroup = svg.append("g").attr("class", "particles");
     
     // Function to get SVG path for a given icon name
     function getIconPath(iconName: string): string {
@@ -426,160 +429,121 @@ export default function GraphMotion() {
       }
     }
     
-    // Add particles with improved flow
+    // Add subtle particle effects (fewer and more subtle)
     interface Particle {
       linkIndex: number;
       progress: number;
       speed: number;
       size: number;
-      brightness: number;
-      delay: number;
+      opacity: number;
     }
 
     const particles: Particle[] = [];
     links.forEach((_, i) => {
-      const numParticles = Math.floor(Math.random() * 2) + 1; // Fewer particles for smoother flow
-      for (let j = 0; j < numParticles; j++) {
+      if (Math.random() > 0.7) { // Only some links have particles
         particles.push({
           linkIndex: i,
           progress: Math.random(),
-          speed: 0.0003 + Math.random() * 0.0005, // Slower, more consistent speed
-          size: Math.random() * 2 + 1, // Smaller particles
-          brightness: Math.random() * 0.4 + 0.6, // More consistent brightness
-          delay: Math.random() * 1000 // Shorter delay
+          speed: 0.001 + Math.random() * 0.002,
+          size: Math.random() * 1.5 + 0.5,
+          opacity: Math.random() * 0.3 + 0.2
         });
       }
     });
     
-    const particleElements = particlesGroup
+    const particleElements = svg.append("g")
       .selectAll<SVGCircleElement, Particle>("circle")
       .data(particles)
       .join("circle")
       .attr("r", d => d.size)
       .attr("fill", "white")
-      .attr("opacity", d => d.brightness * 0.8)
+      .attr("opacity", d => d.opacity)
       .attr("filter", "url(#glow)");
     
-    // Add mouseover interactions for nodes
+    // Add hover interactions
     node.on("mouseover", function(event, d) {
       d3.select(this).select("circle")
         .transition()
-        .duration(300)
-        .attr("r", d.size * 1.3)
-        .attr("filter", "url(#intense-glow)");
+        .duration(200)
+        .attr("r", d.size * 1.2)
+        .attr("filter", "url(#intense-glow)")
+        .attr("opacity", 1);
+        
+      // Highlight connected links
+      link.attr("opacity", l => {
+        return (l.source === d || l.target === d) ? 0.8 : 0.2;
+      });
       
-      simulation.alpha(0.3).restart();
     }).on("mouseout", function(event, d) {
       d3.select(this).select("circle")
         .transition()
-        .duration(500)
+        .duration(300)
         .attr("r", d.size)
-        .attr("filter", d.glow ? "url(#intense-glow)" : "url(#glow)");
+        .attr("filter", d.glow ? "url(#intense-glow)" : "url(#glow)")
+        .attr("opacity", 0.85);
+        
+      // Reset link opacity
+      link.attr("opacity", 0.6);
     });
     
-    // Link interaction
-    link.on("mouseover", function(event, d) {
-      d3.select(this)
-        .transition()
-        .duration(200)
-        .attr("stroke", "rgba(255, 255, 255, 0.6)")
-        .attr("stroke-width", (d.value || 1) * 2);
-        
-      const sourceNode = typeof d.source === 'string' ? nodes.find(n => n.id === d.source) : d.source;
-      const targetNode = typeof d.target === 'string' ? nodes.find(n => n.id === d.target) : d.target;
-      
-      if (sourceNode && targetNode) {
-        simulation
-          .force("link", d3.forceLink<Node, Link>(links)
-            .id(d => d.id)
-            .distance(l => {
-              if ((l.source === sourceNode && l.target === targetNode) || 
-                  (l.source === targetNode && l.target === sourceNode)) {
-                return 50;
-              }
-              return 150 + Math.random() * 100;
-            })
-            .strength(l => {
-              if ((l.source === sourceNode && l.target === targetNode) || 
-                  (l.source === targetNode && l.target === sourceNode)) {
-                return 1;
-              }
-              return 0.2;
-            }));
-        
-        simulation.alpha(0.1).restart();
-      }
-    }).on("mouseout", function(event, d) {
-      d3.select(this)
-        .transition()
-        .duration(500)
-        .attr("stroke", "rgba(255, 255, 255, 0.3)")
-        .attr("stroke-width", Math.sqrt(d.value || 1) * 1.2);
-        
-      simulation
-        .force("link", d3.forceLink<Node, Link>(links)
-          .id(d => d.id)
-          .distance(() => 150 + Math.random() * 100)
-          .strength(0.2));
-          
-      simulation.alpha(0.1).restart();
-    });
-    
-    // Update function with improved particle flow
+    // Update function
     function ticked() {
-      // Update links with smooth curves
-      link.attr("d", d => {
-        const sourceNode = typeof d.source === 'string' ? nodes.find(n => n.id === d.source) : d.source;
-        const targetNode = typeof d.target === 'string' ? nodes.find(n => n.id === d.target) : d.target;
-        
-        if (!sourceNode || !targetNode) return '';
-        
-        const dx = (targetNode.x || 0) - (sourceNode.x || 0);
-        const dy = (targetNode.y || 0) - (sourceNode.y || 0);
-        const controlX = (sourceNode.x || 0) + dx * 0.5 + dy * 0.2;
-        const controlY = (sourceNode.y || 0) + dy * 0.5 - dx * 0.2;
-        
-        return `M ${sourceNode.x || 0} ${sourceNode.y || 0} Q ${controlX} ${controlY} ${targetNode.x || 0} ${targetNode.y || 0}`;
-      });
+      // Update links
+      link
+        .attr("x1", d => {
+          const sourceNode = typeof d.source === 'string' ? nodes.find(n => n.id === d.source) : d.source;
+          return sourceNode?.x || 0;
+        })
+        .attr("y1", d => {
+          const sourceNode = typeof d.source === 'string' ? nodes.find(n => n.id === d.source) : d.source;
+          return sourceNode?.y || 0;
+        })
+        .attr("x2", d => {
+          const targetNode = typeof d.target === 'string' ? nodes.find(n => n.id === d.target) : d.target;
+          return targetNode?.x || 0;
+        })
+        .attr("y2", d => {
+          const targetNode = typeof d.target === 'string' ? nodes.find(n => n.id === d.target) : d.target;
+          return targetNode?.y || 0;
+        });
       
       // Update nodes
       node.attr("transform", d => `translate(${d.x || 0}, ${d.y || 0})`);
       
-      // Update particles along links
-      particleElements.attr("cx", d => {
-        const link = links[d.linkIndex];
-        const sourceNode = typeof link.source === 'string' ? nodes.find(n => n.id === link.source) : link.source;
-        const targetNode = typeof link.target === 'string' ? nodes.find(n => n.id === link.target) : link.target;
-        
-        if (!sourceNode || !targetNode) return 0;
-        
-        return (sourceNode.x || 0) + ((targetNode.x || 0) - (sourceNode.x || 0)) * d.progress;
-      }).attr("cy", d => {
-        const link = links[d.linkIndex];
-        const sourceNode = typeof link.source === 'string' ? nodes.find(n => n.id === link.source) : link.source;
-        const targetNode = typeof link.target === 'string' ? nodes.find(n => n.id === link.target) : link.target;
-        
-        if (!sourceNode || !targetNode) return 0;
-        
-        return (sourceNode.y || 0) + ((targetNode.y || 0) - (sourceNode.y || 0)) * d.progress;
+      // Update particles
+      particles.forEach(p => {
+        p.progress += p.speed;
+        if (p.progress > 1) p.progress = 0;
       });
+      
+      particleElements
+        .attr("cx", d => {
+          const link = links[d.linkIndex];
+          const sourceNode = typeof link.source === 'string' ? nodes.find(n => n.id === link.source) : link.source;
+          const targetNode = typeof link.target === 'string' ? nodes.find(n => n.id === link.target) : link.target;
+          
+          if (!sourceNode || !targetNode) return 0;
+          return (sourceNode.x || 0) + ((targetNode.x || 0) - (sourceNode.x || 0)) * d.progress;
+        })
+        .attr("cy", d => {
+          const link = links[d.linkIndex];
+          const sourceNode = typeof link.source === 'string' ? nodes.find(n => n.id === link.source) : link.source;
+          const targetNode = typeof link.target === 'string' ? nodes.find(n => n.id === link.target) : link.target;
+          
+          if (!sourceNode || !targetNode) return 0;
+          return (sourceNode.y || 0) + ((targetNode.y || 0) - (sourceNode.y || 0)) * d.progress;
+        });
     }
     
     // Set up the simulation
     simulation.on("tick", ticked);
     
-    // Create animation loop
-    function animate() {
-      ticked();
-      requestAnimationFrame(animate);
-    }
-    animate();
-    
-    // Drag functions with proper type handling
+    // Drag functions
     function dragstarted(event: d3.D3DragEvent<SVGGElement, Node, Node>) {
       if (!event.active) simulation.alphaTarget(0.3).restart();
       event.subject.fx = event.subject.x;
       event.subject.fy = event.subject.y;
+      d3.select(event.sourceEvent.target).style("cursor", "grabbing");
     }
     
     function dragged(event: d3.D3DragEvent<SVGGElement, Node, Node>) {
@@ -591,6 +555,7 @@ export default function GraphMotion() {
       if (!event.active) simulation.alphaTarget(0);
       event.subject.fx = null;
       event.subject.fy = null;
+      d3.select(event.sourceEvent.target).style("cursor", "grab");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -600,11 +565,11 @@ export default function GraphMotion() {
   }, [createGraph]);
 
   return (
-    <div className="w-full h-full flex items-center justify-center overflow-hidden">
+    <div className="w-full h-full flex items-center justify-center">
       <svg 
         ref={svgRef} 
         className="w-full h-full"
-        viewBox="0 0 1200 1000" 
+        viewBox="0 0 1000 800" 
         preserveAspectRatio="xMidYMid meet"
         style={{ background: 'transparent' }}
       />

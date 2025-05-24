@@ -1,4 +1,13 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# WalGraph
+
+WalGraph is a decentralized graph database built on SUI blockchain and Walrus protocol. This is a [Next.js](https://nextjs.org) project that provides a modern web interface for creating, managing, and querying graph data structures.
+
+## Features
+
+- 🌐 Decentralized graph database on SUI blockchain
+- 📊 Interactive graph visualization and editing
+- 🔗 Walrus protocol integration for large data storage
+- 🎨 Modern, responsive UI built with Next.js and Tailwind CSS
 
 ## Getting Started
 

@@ -9,8 +9,8 @@ export function HeroSection() {
       <div className="absolute inset-0 bg-black opacity-90"></div>
       
       <div className="container mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
-          <div className="lg:col-span-4 max-w-3xl">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center min-h-[80vh]">
+          <div className="lg:col-span-4 max-w-3xl flex flex-col justify-center">
             <h1 className="mb-2 leading-tight text-left">
               
               <span className="block text-5xl sm:text-6xl md:text-7xl lg:text-8xl font-bold text-white mt-2 font-inter" 
@@ -47,7 +47,7 @@ export function HeroSection() {
             </div>
           </div>
           
-          <div className="lg:col-span-8 h-[550px] md:h-[700px] flex items-center justify-center overflow-hidden">
+          <div className="lg:col-span-8 h-[600px] md:h-[700px] flex items-center justify-center">
             <GraphMotion />
           </div>
         </div>

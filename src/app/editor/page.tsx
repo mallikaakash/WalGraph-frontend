@@ -836,7 +836,7 @@ export default function GraphEditorPage() {
               <span>Back to Home</span>
             </Link>
             <h1 className="text-2xl font-bold bg-gradient-to-r from-cyan-400 to-purple-400 bg-clip-text text-transparent">
-              WebWalrus Graph Editor
+              WalGraph Editor
             </h1>
           </div>
 

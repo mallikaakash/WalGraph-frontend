@@ -4,8 +4,12 @@ import { Providers } from "./providers";
 import "@mysten/dapp-kit/dist/index.css";
 
 export const metadata: Metadata = {
-  title: "WebWalrus Graph Database",
+  title: "WalGraph",
   description: "Decentralized Graph Database built on SUI and Walrus",
+  icons: {
+    icon: '/WalGrah.png',
+    apple: '/WalGrah.png',
+  },
 };
 
 export default function RootLayout({
