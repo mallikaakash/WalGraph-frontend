@@ -16,7 +16,7 @@ export function HowItWorksSection() {
             <div className="relative">
               <div className="aspect-video rounded-lg overflow-hidden border border-border ">
                 <div className="absolute inset-0 bg-zinc-900 flex items-center justify-center">
-                  <video autoPlay loop playsInline className="w-full h-full object-cover rounded-lg">
+                  <video autoPlay muted loop playsInline className="w-full h-full object-cover rounded-lg">
                     <source src="/demoVid.mp4" type="video/mp4" />
                   </video>
                 </div>
