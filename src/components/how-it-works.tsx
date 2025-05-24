@@ -14,9 +14,11 @@ export function HowItWorksSection() {
         <div className="grid md:grid-cols-2 gap-16 items-center">
           <div>
             <div className="relative">
-              <div className="aspect-video rounded-lg overflow-hidden border border-border">
+              <div className="aspect-video rounded-lg overflow-hidden border border-border ">
                 <div className="absolute inset-0 bg-zinc-900 flex items-center justify-center">
-                  <p className="text-zinc-500 text-lg">Editor Interface Demo</p>
+                  <video autoPlay loop playsInline className="w-full h-full object-cover rounded-lg">
+                    <source src="/demoVid.mp4" type="video/mp4" />
+                  </video>
                 </div>
               </div>
             </div>
