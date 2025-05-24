@@ -1,0 +1,8 @@
+name,type,age,company,email
+Alice Johnson,Person,30,TechCorp,alice@techcorp.com
+Bob Smith,Person,25,TechCorp,bob@techcorp.com
+Charlie Brown,Person,28,StartupXYZ,charlie@startupxyz.com
+TechCorp,Company,,Technology,contact@techcorp.com
+StartupXYZ,Company,,Technology,hello@startupxyz.com
+WebApp,Product,,TechCorp,
+MobileApp,Product,,StartupXYZ, 

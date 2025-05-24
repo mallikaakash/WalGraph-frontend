@@ -29,12 +29,65 @@ import {
   ArrowLeft,
   Loader2,
   Copy,
-  Check
+  Check,
+  Upload,
+  FileText,
+  Download
 } from 'lucide-react';
 import Link from 'next/link';
+import Papa from 'papaparse';
 
 // Dynamically import Monaco Editor
 const Editor = dynamic(() => import('@monaco-editor/react'), { ssr: false });
+
+// CSV Import Types
+interface CSVImportSettings {
+  nodeColumns: string[];
+  nodeTypeColumn: string;
+  nodeIdColumn: string;
+  relationshipMode: 'none' | 'sequential' | 'properties';
+  relationshipType: string;
+  sourceColumn: string;
+  targetColumn: string;
+  skipFirstRow: boolean;
+}
+
+interface CSVRowData {
+  [key: string]: string | number | undefined;
+}
+
+interface CSVParseError {
+  type: string;
+  code: string;
+  message: string;
+  row?: number;
+}
+
+interface CSVData {
+  data: CSVRowData[];
+  errors: CSVParseError[];
+  meta: {
+    fields?: string[];
+    delimiter: string;
+    linebreak: string;
+    aborted: boolean;
+    truncated: boolean;
+    cursor: number;
+  };
+}
+
+interface ImportNode {
+  id: string;
+  type: string;
+  properties: Record<string, unknown>;
+}
+
+interface ImportRelationship {
+  type: string;
+  sourceId: string;
+  targetId: string;
+  properties: Record<string, unknown>;
+}
 
 interface EditorState {
   nodes: GraphNode[];
@@ -143,7 +196,7 @@ export default function GraphEditorPage() {
   });
 
   // UI State
-  const [activeTab, setActiveTab] = useState<'query' | 'create' | 'stats' | 'save'>('create');
+  const [activeTab, setActiveTab] = useState<'query' | 'create' | 'stats' | 'save' | 'import'>('create');
   const [queryText, setQueryText] = useState('// Create nodes\nCREATE (p:Person {name: "Alice", age: 30})\nCREATE (c:Company {name: "TechCorp"})\n\n// Create relationship\nMATCH (p:Person), (c:Company)\nWHERE p.name = "Alice" AND c.name = "TechCorp"\nCREATE (p)-[:WORKS_AT]->(c)');
   const [createForm, setCreateForm] = useState({
     nodeType: 'Person',
@@ -160,6 +213,24 @@ export default function GraphEditorPage() {
     tags: 'graph,demo'
   });
   const [copyStatus, setCopyStatus] = useState<{ [key: string]: boolean }>({});
+
+  // CSV Import State
+  const [csvData, setCsvData] = useState<CSVData | null>(null);
+  const [importSettings, setImportSettings] = useState<CSVImportSettings>({
+    nodeColumns: [],
+    nodeTypeColumn: '',
+    nodeIdColumn: '',
+    relationshipMode: 'none',
+    relationshipType: 'RELATED_TO',
+    sourceColumn: '',
+    targetColumn: '',
+    skipFirstRow: true
+  });
+  const [importPreview, setImportPreview] = useState<{
+    nodes: ImportNode[];
+    relationships: ImportRelationship[];
+  }>({ nodes: [], relationships: [] });
+  const [isImporting, setIsImporting] = useState(false);
 
   // Define updateState function
   const updateState = useCallback(() => {
@@ -870,6 +941,235 @@ export default function GraphEditorPage() {
     }
   };
 
+  // CSV Import Functions
+  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    if (file.type !== 'text/csv' && !file.name.endsWith('.csv')) {
+      showError('Please select a CSV file');
+      return;
+    }
+
+    Papa.parse(file, {
+      header: true,
+      skipEmptyLines: true,
+      complete: (results) => {
+        handleCSVData(results as CSVData);
+      },
+      error: (error) => {
+        showError(`CSV parsing error: ${error.message}`);
+      }
+    });
+  };
+
+  const handleCSVData = (results: CSVData) => {
+    console.log('📄 CSV Data loaded:', results);
+    setCsvData(results);
+    
+    // Auto-detect column settings with better type checking
+    let headers: string[] = [];
+    
+    if (results.meta.fields && Array.isArray(results.meta.fields)) {
+      headers = results.meta.fields;
+    } else if (results.data && results.data.length > 0 && Array.isArray(results.data[0])) {
+      headers = results.data[0] as string[];
+    }
+    
+    console.log('📋 Detected headers:', headers);
+    
+    if (headers.length > 0) {
+      const nodeIdColumn = headers.find(h => 
+        typeof h === 'string' && (h.toLowerCase().includes('id') || h.toLowerCase().includes('name'))
+      ) || headers[0] || '';
+      
+      setImportSettings(prev => ({
+        ...prev,
+        nodeColumns: headers,
+        nodeTypeColumn: headers[0] || '',
+        nodeIdColumn: nodeIdColumn,
+        sourceColumn: headers[0] || '',
+        targetColumn: headers[1] || ''
+      }));
+      
+      generateImportPreview(results, {
+        ...importSettings,
+        nodeColumns: headers,
+        nodeTypeColumn: headers[0] || '',
+        nodeIdColumn: nodeIdColumn
+      });
+    } else {
+      console.warn('⚠️ No headers detected in CSV file');
+      showError('Could not detect column headers in CSV file. Please ensure your file has headers.');
+    }
+  };
+
+  const generateImportPreview = (data: CSVData, settings: CSVImportSettings) => {
+    console.log('🔍 Generating import preview with:');
+    console.log('📊 Data:', data);
+    console.log('⚙️ Settings:', settings);
+    
+    if (!data.data || data.data.length === 0) {
+      console.warn('⚠️ No data found for preview generation');
+      return;
+    }
+
+    // Safely get headers with type checking
+    let headers: string[] = [];
+    if (data.meta.fields && Array.isArray(data.meta.fields)) {
+      headers = data.meta.fields;
+      console.log('📋 Headers from meta.fields:', headers);
+    } else if (data.data.length > 0 && Array.isArray(data.data[0])) {
+      headers = data.data[0] as string[];
+      console.log('📋 Headers from first row:', headers);
+    }
+    
+    if (headers.length === 0) {
+      console.error('❌ No headers found for preview generation');
+      showError('Could not detect column headers in CSV file. Please ensure your file has headers.');
+      return;
+    }
+    
+    // Get data rows - Papa Parse with header:true returns objects, not arrays
+    const dataRows = data.data;
+    console.log('📊 Data rows to process:', dataRows.length);
+    console.log('📝 First few data rows:', dataRows.slice(0, 3));
+    
+    // Generate node preview with detailed logging
+    const nodeIdIndex = headers.indexOf(settings.nodeIdColumn);
+    const nodeTypeIndex = headers.indexOf(settings.nodeTypeColumn);
+    
+    console.log('🔗 Looking for columns:');
+    console.log('  - Node ID Column:', settings.nodeIdColumn, '-> Index:', nodeIdIndex);
+    console.log('  - Node Type Column:', settings.nodeTypeColumn, '-> Index:', nodeTypeIndex);
+    console.log('🗂️ Available headers:', headers);
+    
+    if (nodeIdIndex === -1) {
+      console.error(`❌ Node ID column "${settings.nodeIdColumn}" not found in headers:`, headers);
+      showError(`Node ID column "${settings.nodeIdColumn}" not found. Available columns: ${headers.join(', ')}`);
+      return;
+    }
+    
+    if (nodeTypeIndex === -1) {
+      console.error(`❌ Node Type column "${settings.nodeTypeColumn}" not found in headers:`, headers);
+      showError(`Node Type column "${settings.nodeTypeColumn}" not found. Available columns: ${headers.join(', ')}`);
+      return;
+    }
+    
+    // Process rows - Papa Parse with header:true returns objects
+    const nodes: ImportNode[] = dataRows
+      .filter((row, index) => {
+        const isValid = row && typeof row === 'object' && !Array.isArray(row);
+        if (!isValid) {
+          console.warn(`⚠️ Skipping invalid row ${index}:`, row);
+        }
+        return isValid;
+      })
+      .map((row: CSVRowData, index: number) => {
+        console.log(`🔄 Processing row ${index}:`, row);
+        
+        // Row is an object, so access properties directly
+        const nodeId = String(row[settings.nodeIdColumn] || `node_${index}`);
+        const nodeType = String(row[settings.nodeTypeColumn] || 'Unknown');
+        
+        // Use the entire row as properties
+        const properties = { ...row };
+        
+        console.log(`✅ Created node: ID="${nodeId}", Type="${nodeType}", Properties:`, properties);
+        
+        return {
+          id: nodeId,
+          type: nodeType,
+          properties
+        };
+      });
+
+    console.log(`🎯 Generated ${nodes.length} nodes:`, nodes);
+
+    // Generate relationship preview
+    let relationships: ImportRelationship[] = [];
+    if (settings.relationshipMode === 'sequential' && nodes.length > 1) {
+      relationships = nodes.slice(0, -1).map((node, index) => {
+        const rel: ImportRelationship = {
+          type: settings.relationshipType,
+          sourceId: node.id,
+          targetId: nodes[index + 1].id,
+          properties: {}
+        };
+        console.log(`🔗 Created relationship: ${rel.sourceId} -[${rel.type}]-> ${rel.targetId}`);
+        return rel;
+      });
+    } else if (settings.relationshipMode === 'properties' && settings.sourceColumn && settings.targetColumn) {
+      console.log(`🔗 Relationship columns: Source="${settings.sourceColumn}", Target="${settings.targetColumn}"`);
+      
+      relationships = dataRows
+        .filter(row => row && typeof row === 'object')
+        .map((row: CSVRowData) => {
+          const sourceId = row[settings.sourceColumn];
+          const targetId = row[settings.targetColumn];
+          
+          if (sourceId && targetId && sourceId !== targetId) {
+            const rel: ImportRelationship = {
+              type: settings.relationshipType,
+              sourceId: String(sourceId),
+              targetId: String(targetId),
+              properties: {}
+            };
+            console.log(`🔗 Created relationship from columns: ${rel.sourceId} -[${rel.type}]-> ${rel.targetId}`);
+            return rel;
+          }
+          return null;
+        })
+        .filter((rel): rel is ImportRelationship => rel !== null);
+    }
+
+    console.log(`🎉 Final result: ${nodes.length} nodes, ${relationships.length} relationships`);
+    console.log('📋 Nodes:', nodes);
+    console.log('🔗 Relationships:', relationships);
+    
+    setImportPreview({ nodes, relationships });
+  };
+
+  const executeImport = async () => {
+    if (!csvData || importPreview.nodes.length === 0) {
+      showError('No data to import');
+      return;
+    }
+
+    setIsImporting(true);
+
+    try {
+      // Create nodes
+      const nodeMap = new Map<string, string>();
+      for (const nodeData of importPreview.nodes) {
+        const nodeId = graphService.createNode(nodeData.type, nodeData.properties);
+        nodeMap.set(nodeData.id, nodeId);
+      }
+
+      // Create relationships
+      for (const relData of importPreview.relationships) {
+        const sourceId = nodeMap.get(relData.sourceId);
+        const targetId = nodeMap.get(relData.targetId);
+        
+        if (sourceId && targetId) {
+          graphService.createRelationship(relData.type, sourceId, targetId, relData.properties);
+        }
+      }
+
+      updateState();
+      showSuccess(`Imported ${importPreview.nodes.length} nodes and ${importPreview.relationships.length} relationships`);
+      
+      // Clear import data
+      setCsvData(null);
+      setImportPreview({ nodes: [], relationships: [] });
+      
+    } catch (error) {
+      showError(`Import failed: ${error}`);
+    } finally {
+      setIsImporting(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-black to-gray-900 text-white">
       {/* Header */}
@@ -923,6 +1223,12 @@ export default function GraphEditorPage() {
               onClick={() => setActiveTab('stats')}
             >
               <BarChart3 className="inline-block w-4 h-4 mr-1" /> Stats
+            </button>
+            <button
+              className={`py-2 px-4 text-sm font-medium ${activeTab === 'import' ? 'border-b-2 border-cyan-400 text-cyan-400' : 'text-gray-400 hover:text-white'}`}
+              onClick={() => setActiveTab('import')}
+            >
+              <Upload className="inline-block w-4 h-4 mr-1" /> Import
             </button>
             <button
               className={`py-2 px-4 text-sm font-medium ${activeTab === 'save' ? 'border-b-2 border-cyan-400 text-cyan-400' : 'text-gray-400 hover:text-white'}`}
@@ -1122,6 +1428,342 @@ export default function GraphEditorPage() {
                 <p className="text-xs text-gray-400 mt-1">
                   Results will be logged to console (Degree Centrality, Connected Components, PageRank).
                 </p>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'import' && (
+            <div className="flex-1 overflow-y-auto pr-2">
+              <h2 className="text-xl font-semibold mb-3 text-cyan-300">Import CSV/Excel Data</h2>
+              
+              {/* File Upload Section */}
+              <div className="mb-6 p-4 border border-gray-700 rounded-lg bg-gray-900 bg-opacity-50">
+                <h3 className="text-lg font-medium mb-3 text-white flex items-center">
+                  <Upload className="w-5 h-5 mr-2" /> Upload File
+                </h3>
+                
+                <div className="border-2 border-dashed border-gray-600 rounded-lg p-6 text-center">
+                  <div className="space-y-4">
+                    <Upload className="w-8 h-8 mx-auto text-gray-400" />
+                    <div>
+                      <p className="text-gray-300 mb-2">Upload CSV File</p>
+                      <input
+                        type="file"
+                        accept=".csv"
+                        onChange={handleFileUpload}
+                        className="block w-full text-sm text-gray-300
+                          file:mr-4 file:py-2 file:px-4
+                          file:rounded-lg file:border-0
+                          file:text-sm file:font-semibold
+                          file:bg-cyan-600 file:text-white
+                          hover:file:bg-cyan-700 file:cursor-pointer"
+                      />
+                    </div>
+                    <p className="text-gray-500 text-sm">Supports CSV files with headers</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Import Settings */}
+              {csvData && (
+                <div className="mb-6 p-4 border border-gray-700 rounded-lg bg-gray-900 bg-opacity-50">
+                  <h3 className="text-lg font-medium mb-3 text-white">Import Settings</h3>
+                  
+                  <div className="space-y-4">
+                    {/* Node Configuration */}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-300 mb-2">Node Configuration</label>
+                      
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-xs text-gray-400 mb-1">Node Type Column</label>
+                          <select 
+                            value={importSettings.nodeTypeColumn}
+                            onChange={(e) => {
+                              const newSettings = { ...importSettings, nodeTypeColumn: e.target.value };
+                              setImportSettings(newSettings);
+                              if (csvData) generateImportPreview(csvData, newSettings);
+                            }}
+                            className="input text-sm"
+                          >
+                            <option value="">Select column...</option>
+                            {(csvData.meta.fields || []).map(field => (
+                              <option key={field} value={field}>{field}</option>
+                            ))}
+                          </select>
+                        </div>
+                        
+                        <div>
+                          <label className="block text-xs text-gray-400 mb-1">Node ID Column</label>
+                          <select 
+                            value={importSettings.nodeIdColumn}
+                            onChange={(e) => {
+                              const newSettings = { ...importSettings, nodeIdColumn: e.target.value };
+                              setImportSettings(newSettings);
+                              if (csvData) generateImportPreview(csvData, newSettings);
+                            }}
+                            className="input text-sm"
+                          >
+                            <option value="">Select column...</option>
+                            {(csvData.meta.fields || []).map(field => (
+                              <option key={field} value={field}>{field}</option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Relationship Configuration */}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-300 mb-2">Relationship Configuration</label>
+                      
+                      <div className="space-y-3">
+                        <select 
+                          value={importSettings.relationshipMode}
+                          onChange={(e) => {
+                            const newSettings = { ...importSettings, relationshipMode: e.target.value as 'none' | 'sequential' | 'properties' };
+                            setImportSettings(newSettings);
+                            if (csvData) generateImportPreview(csvData, newSettings);
+                          }}
+                          className="input text-sm"
+                        >
+                          <option value="none">No relationships</option>
+                          <option value="sequential">Sequential (each row connects to next)</option>
+                          <option value="properties">From columns (source/target)</option>
+                        </select>
+                        
+                        {importSettings.relationshipMode !== 'none' && (
+                          <>
+                            <input 
+                              type="text"
+                              placeholder="Relationship type (e.g., RELATED_TO)"
+                              value={importSettings.relationshipType}
+                              onChange={(e) => {
+                                const newSettings = { ...importSettings, relationshipType: e.target.value };
+                                setImportSettings(newSettings);
+                                if (csvData) generateImportPreview(csvData, newSettings);
+                              }}
+                              className="input text-sm"
+                            />
+                            
+                            {importSettings.relationshipMode === 'properties' && (
+                              <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                  <label className="block text-xs text-gray-400 mb-1">Source Column</label>
+                                  <select 
+                                    value={importSettings.sourceColumn}
+                                    onChange={(e) => {
+                                      const newSettings = { ...importSettings, sourceColumn: e.target.value };
+                                      setImportSettings(newSettings);
+                                      if (csvData) generateImportPreview(csvData, newSettings);
+                                    }}
+                                    className="input text-sm"
+                                  >
+                                    <option value="">Select column...</option>
+                                    {(csvData.meta.fields || []).map(field => (
+                                      <option key={field} value={field}>{field}</option>
+                                    ))}
+                                  </select>
+                                </div>
+                                
+                                <div>
+                                  <label className="block text-xs text-gray-400 mb-1">Target Column</label>
+                                  <select 
+                                    value={importSettings.targetColumn}
+                                    onChange={(e) => {
+                                      const newSettings = { ...importSettings, targetColumn: e.target.value };
+                                      setImportSettings(newSettings);
+                                      if (csvData) generateImportPreview(csvData, newSettings);
+                                    }}
+                                    className="input text-sm"
+                                  >
+                                    <option value="">Select column...</option>
+                                    {(csvData.meta.fields || []).map(field => (
+                                      <option key={field} value={field}>{field}</option>
+                                    ))}
+                                  </select>
+                                </div>
+                              </div>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Options */}
+                    <div>
+                      <label className="flex items-center text-sm text-gray-300">
+                        <input 
+                          type="checkbox"
+                          checked={importSettings.skipFirstRow}
+                          onChange={(e) => {
+                            const newSettings = { ...importSettings, skipFirstRow: e.target.checked };
+                            setImportSettings(newSettings);
+                            if (csvData) generateImportPreview(csvData, newSettings);
+                          }}
+                          className="mr-2"
+                        />
+                        Skip first row (if not using headers)
+                      </label>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Preview Section */}
+              {importPreview.nodes.length > 0 && (
+                <div className="mb-6 p-4 border border-gray-700 rounded-lg bg-gray-900 bg-opacity-50">
+                  <h3 className="text-lg font-medium mb-3 text-white">Import Preview</h3>
+                  
+                  <div className="space-y-4">
+                    <div>
+                      <h4 className="text-cyan-300 font-medium mb-2">
+                        Nodes ({importPreview.nodes.length})
+                      </h4>
+                      <div className="bg-gray-800 rounded p-3 max-h-32 overflow-y-auto">
+                        {importPreview.nodes.slice(0, 5).map((node, idx) => (
+                          <div key={idx} className="text-xs text-gray-300 mb-1">
+                            <span className="text-cyan-400">{node.type}</span>: {node.id}
+                            {Object.keys(node.properties).length > 0 && (
+                              <span className="text-gray-500 ml-2">
+                                ({Object.keys(node.properties).join(', ')})
+                              </span>
+                            )}
+                          </div>
+                        ))}
+                        {importPreview.nodes.length > 5 && (
+                          <div className="text-xs text-gray-500">
+                            ...and {importPreview.nodes.length - 5} more
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    
+                    {importPreview.relationships.length > 0 && (
+                      <div>
+                        <h4 className="text-purple-300 font-medium mb-2">
+                          Relationships ({importPreview.relationships.length})
+                        </h4>
+                        <div className="bg-gray-800 rounded p-3 max-h-32 overflow-y-auto">
+                          {importPreview.relationships.slice(0, 5).map((rel, idx) => (
+                            <div key={idx} className="text-xs text-gray-300 mb-1">
+                              <span className="text-cyan-400">{rel.sourceId}</span>
+                              <span className="text-purple-400 mx-2">-[{rel.type}]-&gt;</span>
+                              <span className="text-cyan-400">{rel.targetId}</span>
+                            </div>
+                          ))}
+                          {importPreview.relationships.length > 5 && (
+                            <div className="text-xs text-gray-500">
+                              ...and {importPreview.relationships.length - 5} more
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Import Button and Status */}
+              {csvData && (
+                <div className="mb-6 p-4 border border-cyan-600 rounded-lg bg-cyan-900 bg-opacity-30">
+                  <h3 className="text-lg font-medium mb-3 text-cyan-300 flex items-center">
+                    <FileText className="w-5 h-5 mr-2" /> CSV Data Loaded
+                  </h3>
+                  
+                  <div className="space-y-3">
+                    <div className="text-sm text-gray-300">
+                      <span className="font-medium">File Info:</span> {csvData.data.length} rows, {csvData.meta.fields?.length || 0} columns
+                    </div>
+                    
+                    {csvData.meta.fields && (
+                      <div className="text-sm text-gray-300">
+                        <span className="font-medium">Columns:</span> {csvData.meta.fields.join(', ')}
+                      </div>
+                    )}
+                    
+                    {importPreview.nodes.length > 0 ? (
+                      <div className="bg-green-900 bg-opacity-50 border border-green-600 rounded p-3">
+                        <div className="text-green-300 font-medium mb-2">✅ Preview Generated</div>
+                        <div className="text-sm text-gray-300">
+                          Ready to import: <span className="text-cyan-400">{importPreview.nodes.length} nodes</span>
+                          {importPreview.relationships.length > 0 && (
+                            <span>, <span className="text-purple-400">{importPreview.relationships.length} relationships</span></span>
+                          )}
+                        </div>
+                        
+                        <button
+                          onClick={executeImport}
+                          disabled={isImporting}
+                          className="btn-primary w-full flex items-center justify-center mt-3"
+                        >
+                          {isImporting ? (
+                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                          ) : (
+                            <Download className="w-4 h-4 mr-2" />
+                          )}
+                          Import {importPreview.nodes.length} Nodes
+                          {importPreview.relationships.length > 0 && (
+                            <span> &amp; {importPreview.relationships.length} Relationships</span>
+                          )}
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="bg-yellow-900 bg-opacity-50 border border-yellow-600 rounded p-3">
+                        <div className="text-yellow-300 font-medium mb-2">⚠️ Configure Import Settings</div>
+                        <div className="text-sm text-gray-300 mb-3">
+                          Please configure the import settings above to generate a preview.
+                        </div>
+                        
+                        <button
+                          onClick={() => {
+                            if (csvData && importSettings.nodeTypeColumn && importSettings.nodeIdColumn) {
+                              generateImportPreview(csvData, importSettings);
+                            } else {
+                              showError('Please select node type and ID columns first');
+                            }
+                          }}
+                          className="btn-secondary w-full flex items-center justify-center"
+                        >
+                          <Search className="w-4 h-4 mr-2" /> Generate Preview
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Legacy Import Button (keeping for backwards compatibility) */}
+              {importPreview.nodes.length > 0 && !csvData && (
+                <div className="mb-4">
+                  <button
+                    onClick={executeImport}
+                    disabled={isImporting}
+                    className="btn-primary w-full flex items-center justify-center"
+                  >
+                    {isImporting ? (
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    ) : (
+                      <Download className="w-4 h-4 mr-2" />
+                    )}
+                    Import {importPreview.nodes.length} Nodes
+                    {importPreview.relationships.length > 0 && (
+                      <span> &amp; {importPreview.relationships.length} Relationships</span>
+                    )}
+                  </button>
+                </div>
+              )}
+
+              {/* Instructions */}
+              <div className="p-4 border border-blue-700 rounded-lg bg-blue-900 bg-opacity-30">
+                <h4 className="text-blue-300 font-medium mb-2">📋 How to Use CSV Import</h4>
+                <div className="text-xs text-blue-200 space-y-1">
+                  <p>• <strong>Upload:</strong> Select a CSV file with column headers</p>
+                  <p>• <strong>Configure:</strong> Choose which columns represent node types, IDs, and relationships</p>
+                  <p>• <strong>Preview:</strong> Review the data that will be imported before proceeding</p>
+                  <p>• <strong>Import:</strong> Click the import button to add nodes and relationships to your graph</p>
+                  <p>• <strong>Relationships:</strong> Choose &apos;Sequential&apos; to connect each row to the next, or &apos;From columns&apos; to specify source/target columns</p>
+                </div>
               </div>
             </div>
           )}
