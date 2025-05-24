@@ -27,7 +27,9 @@ import {
   Edit,
   Trash2,
   ArrowLeft,
-  Loader2
+  Loader2,
+  Copy,
+  Check
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -43,6 +45,12 @@ interface EditorState {
   isLoading: boolean;
   error: string | null;
   stats: GraphStats | null;
+  savedGraphInfo: {
+    blobId: string;
+    transactionDigest: string;
+    timestamp: string;
+    name: string;
+  } | null;
 }
 
 interface D3Node extends GraphNode {
@@ -106,6 +114,7 @@ export default function GraphEditorPage() {
           onSuccess: (result) => {
             console.log('✅ Wallet: Transaction successful:', result);
             console.log('📋 Object changes:', result.objectChanges);
+            console.log('🔗 Transaction digest:', result.digest);
             resolve(result);
           },
           onError: (error) => {
@@ -129,7 +138,8 @@ export default function GraphEditorPage() {
     queryResult: null,
     isLoading: false,
     error: null,
-    stats: null
+    stats: null,
+    savedGraphInfo: null
   });
 
   // UI State
@@ -149,6 +159,7 @@ export default function GraphEditorPage() {
     isPublic: false,
     tags: 'graph,demo'
   });
+  const [copyStatus, setCopyStatus] = useState<{ [key: string]: boolean }>({});
 
   // Define updateState function
   const updateState = useCallback(() => {
@@ -722,6 +733,17 @@ export default function GraphEditorPage() {
         tags: tags
       });
 
+      // Create a wrapper to capture transaction info
+      let transactionDigest = '';
+      const signAndExecuteWithCapture = async (params: unknown): Promise<unknown> => {
+        const result = await signAndExecute(params);
+        // Capture the transaction digest from the result
+        if (result && typeof result === 'object' && 'digest' in result) {
+          transactionDigest = (result as { digest: string }).digest;
+        }
+        return result;
+      };
+
       const result = await graphService.saveGraph({
         name: saveForm.name,
         description: saveForm.description,
@@ -729,10 +751,20 @@ export default function GraphEditorPage() {
         tags
       }, 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      signAndExecute as any);
+      signAndExecuteWithCapture as any);
 
       console.log('🎉 Graph save completed:', result);
       showSuccess(`Graph saved! Blob ID: ${result.blobId}`);
+
+      setState(prev => ({
+        ...prev,
+        savedGraphInfo: {
+          blobId: result.blobId,
+          transactionDigest: transactionDigest,
+          timestamp: new Date().toISOString(),
+          name: saveForm.name
+        }
+      }));
 
     } catch (error) {
       console.error('💥 Graph save failed:', error);
@@ -796,6 +828,19 @@ export default function GraphEditorPage() {
     // You could replace this with a toast notification
   };
 
+  // Copy to clipboard function
+  const copyToClipboard = async (text: string, key: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopyStatus(prev => ({ ...prev, [key]: true }));
+      setTimeout(() => {
+        setCopyStatus(prev => ({ ...prev, [key]: false }));
+      }, 2000);
+    } catch (error) {
+      console.error('Failed to copy:', error);
+    }
+  };
+
   // Add createSampleData function
   const createSampleData = () => {
     try {
@@ -842,6 +887,12 @@ export default function GraphEditorPage() {
 
           <div className="flex items-center space-x-4">
             <ConnectButton />
+            {state.savedGraphInfo && (
+              <div className="text-xs glass p-2 rounded border border-green-600">
+                <div className="text-green-300 font-medium">✅ Saved to Walrus</div>
+                <div className="text-gray-300">Blob: <span className="font-mono text-cyan-300">{state.savedGraphInfo.blobId.slice(0, 8)}...</span></div>
+              </div>
+            )}
             <div className="text-sm glass p-2 rounded">
               <div>Nodes: <span className="text-cyan-400">{state.stats?.nodeCount || 0}</span></div>
               <div>Relationships: <span className="text-purple-400">{state.stats?.relationshipCount || 0}</span></div>
@@ -1078,6 +1129,66 @@ export default function GraphEditorPage() {
           {activeTab === 'save' && (
             <div className="flex-1 overflow-y-auto pr-2">
               <h2 className="text-xl font-semibold mb-3 text-cyan-300">Save / Load Graph</h2>
+              
+              {/* Display Saved Graph Info */}
+              {state.savedGraphInfo && (
+                <div className="mb-6 p-4 border border-green-600 rounded-lg bg-green-900 bg-opacity-30">
+                  <h3 className="text-lg font-medium mb-2 text-green-300 flex items-center">
+                    ✅ Graph Successfully Saved
+                  </h3>
+                  <div className="space-y-2 text-sm">
+                    <div>
+                      <span className="text-gray-300">Name:</span> 
+                      <span className="text-white font-medium ml-2">{state.savedGraphInfo.name}</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-300">Blob ID:</span>
+                      <div className="flex items-center gap-2 mt-1">
+                        <div className="font-mono text-cyan-300 bg-gray-800 p-2 rounded flex-1 break-all">
+                          {state.savedGraphInfo.blobId}
+                        </div>
+                        <button
+                          onClick={() => copyToClipboard(state.savedGraphInfo!.blobId, 'blobId')}
+                          className="p-2 text-gray-400 hover:text-cyan-300 transition-colors"
+                          title="Copy Blob ID"
+                        >
+                          {copyStatus.blobId ? <Check className="w-4 h-4 text-green-400" /> : <Copy className="w-4 h-4" />}
+                        </button>
+                      </div>
+                    </div>
+                    <div>
+                      <span className="text-gray-300">Transaction Digest:</span>
+                      <div className="flex items-center gap-2 mt-1">
+                        <div className="font-mono text-purple-300 bg-gray-800 p-2 rounded flex-1 break-all">
+                          {state.savedGraphInfo.transactionDigest}
+                        </div>
+                        <button
+                          onClick={() => copyToClipboard(state.savedGraphInfo!.transactionDigest, 'txDigest')}
+                          className="p-2 text-gray-400 hover:text-purple-300 transition-colors"
+                          title="Copy Transaction Digest"
+                        >
+                          {copyStatus.txDigest ? <Check className="w-4 h-4 text-green-400" /> : <Copy className="w-4 h-4" />}
+                        </button>
+                      </div>
+                    </div>
+                    <div>
+                      <span className="text-gray-300">Saved At:</span>
+                      <span className="text-white ml-2">
+                        {new Date(state.savedGraphInfo.timestamp).toLocaleString()}
+                      </span>
+                    </div>
+                    <div className="mt-3 pt-3 border-t border-green-700">
+                      <h4 className="text-green-200 font-medium mb-2">🔍 Verification Instructions:</h4>
+                      <div className="text-xs text-gray-300 space-y-1">
+                        <p>• <strong>SUI Explorer:</strong> Visit <a href={`https://suiscan.xyz/testnet/tx/${state.savedGraphInfo.transactionDigest}`} target="_blank" rel="noopener noreferrer" className="text-cyan-400 underline">https://suiscan.xyz/testnet/tx/{state.savedGraphInfo.transactionDigest}</a></p>
+                        <p>• <strong>Walrus Storage:</strong> Your graph data is permanently stored in Walrus Blob: <span className="font-mono text-cyan-300">{state.savedGraphInfo.blobId}</span></p>
+                        <p>• <strong>Immutable Proof:</strong> The transaction on SUI blockchain proves the ownership and timestamp of your graph</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               <div className="mb-6 p-4 border border-gray-700 rounded-lg bg-gray-900 bg-opacity-50">
                 <h3 className="text-lg font-medium mb-2 text-white">Save Current Graph</h3>
                 <label htmlFor="graphName" className="block text-sm font-medium text-gray-300 mb-1">Graph Name</label>

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from 'next/link';
+import Image from 'next/image';
 
 export function Navbar() {
   return (
@@ -8,7 +9,7 @@ export function Navbar() {
       <div className="container mx-auto px-4">
         <div className="flex items-center justify-between h-16">
           <Link href="/" className="flex items-center space-x-2">
-            <img src="/WalGrah.png" alt="WalGraph Logo" className="h-12 w-12" />
+            <Image src="/WalGrah.png" alt="WalGraph Logo" width={48} height={48} className="h-12 w-12" />
             <span className="text-xl font-mono">WalGraph</span>
           </Link>
 
