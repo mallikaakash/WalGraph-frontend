@@ -892,12 +892,11 @@ export default function GraphEditorPage() {
         
         if (propsStr) {
           try {
-            // Convert {prop: value} to {"prop": "value"}
-            const jsonStr = propsStr.replace(/(\w+):\s*([^,}]+)/g, '"$1": "$2"');
-            properties = JSON.parse(jsonStr);
-          } catch {
-            // Fallback: try to parse as-is
-            properties = JSON.parse(propsStr);
+            // More robust property parsing
+            properties = parseProperties(propsStr);
+          } catch (parseError) {
+            console.warn('Property parsing failed, using empty properties:', parseError);
+            properties = {};
           }
         }
         
@@ -914,6 +913,91 @@ export default function GraphEditorPage() {
     } catch (error) {
       throw new Error(`CREATE command failed: ${error}`);
     }
+  };
+
+  // Helper function to parse Cypher property syntax
+  const parseProperties = (propsStr: string): Record<string, unknown> => {
+    // Remove outer braces
+    const content = propsStr.trim().slice(1, -1).trim();
+    
+    if (!content) {
+      return {};
+    }
+
+    const properties: Record<string, unknown> = {};
+    
+    // Split by commas, but be careful about quoted strings
+    const pairs = [];
+    let current = '';
+    let inQuotes = false;
+    let quoteChar = '';
+    
+    for (let i = 0; i < content.length; i++) {
+      const char = content[i];
+      
+      if ((char === '"' || char === "'") && !inQuotes) {
+        inQuotes = true;
+        quoteChar = char;
+        current += char;
+      } else if (char === quoteChar && inQuotes) {
+        inQuotes = false;
+        quoteChar = '';
+        current += char;
+      } else if (char === ',' && !inQuotes) {
+        pairs.push(current.trim());
+        current = '';
+      } else {
+        current += char;
+      }
+    }
+    
+    if (current.trim()) {
+      pairs.push(current.trim());
+    }
+
+    // Parse each key-value pair
+    for (const pair of pairs) {
+      const colonIndex = pair.indexOf(':');
+      if (colonIndex === -1) continue;
+      
+      const key = pair.substring(0, colonIndex).trim();
+      const valueStr = pair.substring(colonIndex + 1).trim();
+      
+      // Parse the value
+      let value: unknown = valueStr;
+      
+      // Handle quoted strings
+      if ((valueStr.startsWith('"') && valueStr.endsWith('"')) || 
+          (valueStr.startsWith("'") && valueStr.endsWith("'"))) {
+        value = valueStr.slice(1, -1);
+      }
+      // Handle numbers
+      else if (/^\d+$/.test(valueStr)) {
+        value = parseInt(valueStr, 10);
+      }
+      else if (/^\d+\.\d+$/.test(valueStr)) {
+        value = parseFloat(valueStr);
+      }
+      // Handle booleans
+      else if (valueStr === 'true') {
+        value = true;
+      }
+      else if (valueStr === 'false') {
+        value = false;
+      }
+      // Handle null
+      else if (valueStr === 'null') {
+        value = null;
+      }
+      // Everything else as string (unquoted)
+      else {
+        value = valueStr;
+      }
+      
+      properties[key] = value;
+    }
+    
+    return properties;
   };
 
   const executeMatchCommand = (command: string): MatchCommandResult => {

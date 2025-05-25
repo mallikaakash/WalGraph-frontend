@@ -1,0 +1,23 @@
+source_id,target_id,relationship_type,since,role,status,notes
+1,C1,WORKS_AT,2020,Software Engineer,Active,Full-time employee
+2,C1,WORKS_AT,2021,Product Manager,Active,Team lead
+3,C1,WORKS_AT,2019,Senior Developer,Active,Tech lead
+6,C1,WORKS_AT,2018,Engineering Manager,Active,Department head
+7,C1,WORKS_AT,2023,Junior Developer,Active,Recent hire
+9,C1,WORKS_AT,2022,Marketing Manager,Active,Marketing team
+10,C1,WORKS_AT,2023,Sales Representative,Active,Sales team
+4,C2,WORKS_AT,2020,UX Designer,Active,Senior designer
+5,C3,WORKS_AT,2021,Data Scientist,Active,ML specialist
+8,C4,WORKS_AT,2019,DevOps Engineer,Active,Infrastructure expert
+1,P1,WORKS_ON,2023,Lead Developer,Active,Primary contributor
+3,P1,WORKS_ON,2023,Senior Developer,Active,Backend development
+7,P1,WORKS_ON,2023,Junior Developer,Active,Frontend development
+2,P1,MANAGES,2023,Product Manager,Active,Project oversight
+5,P2,WORKS_ON,2023,Data Scientist,Active,Analytics implementation
+4,P3,WORKS_ON,2024,UX Designer,Active,Design lead
+8,P4,WORKS_ON,2023,DevOps Engineer,Active,Migration specialist
+1,3,MENTORS,2020,Senior,Active,Code reviews and guidance
+6,1,MANAGES,2020,Manager,Active,Direct report
+6,3,MANAGES,2019,Manager,Active,Direct report
+6,7,MANAGES,2023,Manager,Active,Direct report
+1,7,MENTORS,2023,Senior,Active,Onboarding and training 

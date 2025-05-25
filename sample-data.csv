@@ -1,8 +1,11 @@
-name,type,age,company,email
-Alice Johnson,Person,30,TechCorp,alice@techcorp.com
-Bob Smith,Person,25,TechCorp,bob@techcorp.com
-Charlie Brown,Person,28,StartupXYZ,charlie@startupxyz.com
-TechCorp,Company,,Technology,contact@techcorp.com
-StartupXYZ,Company,,Technology,hello@startupxyz.com
-WebApp,Product,,TechCorp,
-MobileApp,Product,,StartupXYZ, 
+id,name,type,age,role,company,department,location,salary,experience,skills
+1,Alice Johnson,Person,30,Software Engineer,TechCorp,Engineering,San Francisco,95000,5,JavaScript Python React
+2,Bob Smith,Person,28,Product Manager,TechCorp,Product,San Francisco,85000,4,Strategy Analytics Agile
+3,Charlie Brown,Person,35,Senior Developer,TechCorp,Engineering,New York,105000,8,Java Spring Microservices
+4,Diana Prince,Person,32,UX Designer,DesignStudio,Design,Los Angeles,75000,6,Figma Sketch UserResearch
+5,Eve Wilson,Person,29,Data Scientist,DataCorp,Analytics,Seattle,90000,3,Python R MachineLearning
+6,Frank Miller,Person,45,Engineering Manager,TechCorp,Engineering,San Francisco,130000,12,Leadership Architecture
+7,Grace Lee,Person,26,Junior Developer,TechCorp,Engineering,Austin,65000,2,React Node.js MongoDB
+8,Henry Davis,Person,38,DevOps Engineer,CloudTech,Infrastructure,Denver,100000,7,AWS Docker Kubernetes
+9,Ivy Chen,Person,31,Marketing Manager,TechCorp,Marketing,San Francisco,80000,5,Digital Marketing SEO
+10,Jack Taylor,Person,27,Sales Representative,TechCorp,Sales,Chicago,70000,3,CRM Salesforce Communication
