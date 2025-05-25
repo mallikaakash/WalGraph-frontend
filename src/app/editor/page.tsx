@@ -40,7 +40,49 @@ import Papa from 'papaparse';
 // Dynamically import Monaco Editor
 const Editor = dynamic(() => import('@monaco-editor/react'), { ssr: false });
 
-// CSV Import Types
+// Define types for better TypeScript support
+interface QueryCommand {
+  command: string;
+  type: string;
+  result: unknown;
+  success: boolean;
+}
+
+interface CreateCommandResult {
+  nodeId: string;
+  type: string;
+  properties: Record<string, unknown>;
+  variable: string;
+}
+
+interface MatchCommandResult {
+  pattern: string;
+  matchedNodes?: Array<{
+    id: string;
+    type: string;
+    properties: Record<string, unknown>;
+  }>;
+  matchedRelationships?: Array<{
+    id: string;
+    type: string;
+    sourceId: string;
+    targetId: string;
+    properties: Record<string, unknown>;
+  }>;
+  count: number;
+  returnVariable: string;
+}
+
+interface QueryAggregations {
+  executedCommands?: number;
+  commands?: QueryCommand[];
+  timestamp?: string;
+  graphStats?: GraphStats;
+  error?: string;
+  originalQuery?: string;
+  [key: string]: unknown;
+}
+
 interface CSVImportSettings {
   nodeColumns: string[];
   nodeTypeColumn: string;
@@ -197,7 +239,7 @@ export default function GraphEditorPage() {
 
   // UI State
   const [activeTab, setActiveTab] = useState<'query' | 'create' | 'stats' | 'save' | 'import'>('create');
-  const [queryText, setQueryText] = useState('// Create nodes\nCREATE (p:Person {name: "Alice", age: 30})\nCREATE (c:Company {name: "TechCorp"})\n\n// Create relationship\nMATCH (p:Person), (c:Company)\nWHERE p.name = "Alice" AND c.name = "TechCorp"\nCREATE (p)-[:WORKS_AT]->(c)');
+  const [queryText, setQueryText] = useState('MATCH (p:Person) RETURN p');
   const [createForm, setCreateForm] = useState({
     nodeType: 'Person',
     nodeProps: '{"name": "John", "age": 25}',
@@ -740,43 +782,208 @@ export default function GraphEditorPage() {
 
   const executeQuery = () => {
     try {
-      setState(prev => ({ ...prev, isLoading: true, error: null }));
+      setState(prev => ({ ...prev, isLoading: true, error: null, queryResult: null }));
 
       // Parse and execute simple commands
       const commands = queryText.split('\n').filter(line => line.trim());
+      const results: QueryCommand[] = [];
+      let executedCommands = 0;
+      let totalNodes = 0;
+      let totalRelationships = 0;
 
       commands.forEach(command => {
         const cmd = command.trim();
+        console.log('🔄 Executing command:', cmd);
 
         if (cmd.startsWith('CREATE (')) {
-          executeCreateCommand(cmd);
+          const result = executeCreateCommand(cmd);
+          if (result) {
+            results.push({
+              command: cmd,
+              type: 'CREATE',
+              result: result,
+              success: true
+            });
+            executedCommands++;
+            totalNodes++;
+          }
         } else if (cmd.startsWith('MATCH')) {
-          executeMatchCommand(cmd);
+          const result = executeMatchCommand(cmd);
+          results.push({
+            command: cmd,
+            type: 'MATCH',
+            result: result,
+            success: true
+          });
+          executedCommands++;
+          if (result.matchedNodes) totalNodes += result.matchedNodes.length;
+          if (result.matchedRelationships) totalRelationships += result.matchedRelationships.length;
+        } else if (cmd.toUpperCase().startsWith('CLEAR')) {
+          graphService.clearGraph();
+          results.push({
+            command: cmd,
+            type: 'CLEAR',
+            result: 'Graph cleared successfully',
+            success: true
+          });
+          executedCommands++;
+        } else if (cmd) {
+          results.push({
+            command: cmd,
+            type: 'UNKNOWN',
+            result: `Unknown command: ${cmd}`,
+            success: false
+          });
         }
       });
 
+      // Create a proper QueryResult object
+      const aggregations: QueryAggregations = {
+        executedCommands,
+        commands: results,
+        timestamp: new Date().toISOString(),
+        graphStats: graphService.getGraphStats()
+      };
+
+      const finalResult: QueryResult = {
+        nodes: [],
+        relationships: [],
+        executionTime: Date.now(),
+        totalResults: totalNodes + totalRelationships,
+        aggregations
+      };
+
+      setState(prev => ({ ...prev, queryResult: finalResult }));
       updateState();
-      showSuccess('Query executed successfully');
+      
+      if (executedCommands > 0) {
+        showSuccess(`Query executed successfully: ${executedCommands} commands processed`);
+      } else {
+        showError('No valid commands found to execute');
+      }
     } catch (error) {
+      const errorAggregations: QueryAggregations = {
+        error: String(error),
+        timestamp: new Date().toISOString(),
+        originalQuery: queryText
+      };
+
+      const errorResult: QueryResult = {
+        nodes: [],
+        relationships: [],
+        executionTime: Date.now(),
+        totalResults: 0,
+        aggregations: errorAggregations
+      };
+      setState(prev => ({ ...prev, queryResult: errorResult }));
       showError(`Query execution failed: ${error}`);
     } finally {
       setState(prev => ({ ...prev, isLoading: false }));
     }
   };
 
-  const executeCreateCommand = (command: string) => {
-    // Simple CREATE parser: CREATE (n:Type {prop: value})
-    const match = command.match(/CREATE \((\w+):(\w+)\s*(\{[^}]*\})?\)/);
-    if (match) {
-      const [, , type, propsStr] = match;
-      const properties = propsStr ? JSON.parse(propsStr.replace(/(\w+):/g, '"$1":')) : {};
-      graphService.createNode(type, properties);
+  const executeCreateCommand = (command: string): CreateCommandResult | null => {
+    try {
+      // Improved CREATE parser: CREATE (n:Type {prop: value})
+      const match = command.match(/CREATE \s*\(\s*(\w+)?\s*:?\s*(\w+)\s*(\{[^}]*\})?\s*\)/i);
+      if (match) {
+        const [, variable, type, propsStr] = match;
+        let properties = {};
+        
+        if (propsStr) {
+          try {
+            // Convert {prop: value} to {"prop": "value"}
+            const jsonStr = propsStr.replace(/(\w+):\s*([^,}]+)/g, '"$1": "$2"');
+            properties = JSON.parse(jsonStr);
+          } catch {
+            // Fallback: try to parse as-is
+            properties = JSON.parse(propsStr);
+          }
+        }
+        
+        const nodeId = graphService.createNode(type, properties);
+        return {
+          nodeId,
+          type,
+          properties,
+          variable: variable || 'n'
+        };
+      } else {
+        throw new Error(`Invalid CREATE syntax: ${command}`);
+      }
+    } catch (error) {
+      throw new Error(`CREATE command failed: ${error}`);
     }
   };
 
-  const executeMatchCommand = (command: string) => {
-    // Simple MATCH implementation would go here
-    console.log('MATCH command:', command);
+  const executeMatchCommand = (command: string): MatchCommandResult => {
+    try {
+      // Simple MATCH implementation
+      console.log('🔍 MATCH command:', command);
+      
+      // Basic pattern: MATCH (n:Type) RETURN n
+      const simpleMatch = command.match(/MATCH \s*\(\s*(\w+)\s*:?\s*(\w+)?\s*\)\s*RETURN\s+(\w+)/i);
+      if (simpleMatch) {
+        const [, variable, type, returnVar] = simpleMatch;
+        
+        let matchedNodes = state.nodes;
+        if (type) {
+          matchedNodes = state.nodes.filter(node => node.type === type);
+        }
+        
+        return {
+          pattern: `(${variable}${type ? ':' + type : ''})`,
+          matchedNodes: matchedNodes.map(node => ({
+            id: node.id,
+            type: node.type,
+            properties: node.properties
+          })),
+          count: matchedNodes.length,
+          returnVariable: returnVar
+        };
+      }
+      
+      // MATCH all nodes
+      if (command.match(/MATCH \s*\(\s*\w*\s*\)\s*RETURN/i)) {
+        return {
+          pattern: '()',
+          matchedNodes: state.nodes.map(node => ({
+            id: node.id,
+            type: node.type,
+            properties: node.properties
+          })),
+          count: state.nodes.length,
+          returnVariable: 'all'
+        };
+      }
+      
+      // MATCH relationships
+      const relMatch = command.match(/MATCH \s*\(\s*\w*\s*\)\s*-\s*\[\s*\w*\s*:?\s*(\w+)?\s*\]\s*-\s*\(\s*\w*\s*\)/i);
+      if (relMatch) {
+        const [, relType] = relMatch;
+        let matchedRels = state.relationships;
+        if (relType) {
+          matchedRels = state.relationships.filter(rel => rel.type === relType);
+        }
+        
+        return {
+          pattern: `()-[${relType || ''}]-()`,
+          matchedRelationships: matchedRels.map(rel => ({
+            id: rel.id,
+            type: rel.type,
+            sourceId: rel.sourceId,
+            targetId: rel.targetId,
+            properties: rel.properties
+          })),
+          count: matchedRels.length,
+          returnVariable: 'relationships'
+        };
+      }
+      
+      throw new Error(`Unsupported MATCH pattern: ${command}`);
+    } catch (error) {
+      throw new Error(`MATCH command failed: ${error}`);
+    }
   };
 
   // ==========================
@@ -887,6 +1094,30 @@ export default function GraphEditorPage() {
   // ==========================
   // UTILITY FUNCTIONS
   // ==========================
+
+  // Helper functions to safely access aggregations
+  const getAggregationValue = (aggregations: QueryAggregations | undefined, key: string, defaultValue: unknown = null): unknown => {
+    return aggregations?.[key] ?? defaultValue;
+  };
+
+  const getAggregationNumber = (aggregations: QueryAggregations | undefined, key: string, defaultValue: number = 0): number => {
+    const value = aggregations?.[key];
+    return typeof value === 'number' ? value : defaultValue;
+  };
+
+  const hasAggregationError = (aggregations: QueryAggregations | undefined): boolean => {
+    return Boolean(aggregations?.error);
+  };
+
+  const getCommands = (aggregations: QueryAggregations | undefined): QueryCommand[] => {
+    const commands = getAggregationValue(aggregations, 'commands', []);
+    return Array.isArray(commands) ? commands as QueryCommand[] : [];
+  };
+
+  const getGraphStatsFromAggregations = (aggregations: QueryAggregations | undefined): GraphStats | null => {
+    const stats = getAggregationValue(aggregations, 'graphStats');
+    return stats as GraphStats | null;
+  };
 
   const showSuccess = (message: string) => {
     console.log('✅', message);
@@ -1343,12 +1574,12 @@ export default function GraphEditorPage() {
           )}
 
           {activeTab === 'query' && (
-            <div className="flex flex-col flex-1">
+            <div className="flex-1 overflow-y-auto pr-2">
               <h2 className="text-xl font-semibold mb-3 text-cyan-300">Graph Query (Cypher-like)</h2>
-              <div className="flex-1 mb-4 overflow-hidden rounded-lg border border-gray-700">
+              <div className="h-48 mb-4 overflow-hidden rounded-lg border border-gray-700">
                 <Editor
-                  height="100%"
-                  language="cypher" // Or a custom language for your syntax
+                  height="200px"
+                  language="cypher"
                   theme="vs-dark"
                   value={queryText}
                   onChange={(value) => setQueryText(value || '')}
@@ -1366,13 +1597,12 @@ export default function GraphEditorPage() {
                     cursorBlinking: 'smooth',
                     cursorStyle: 'line',
                     lineHeight: 22,
-                    // You can add more Monaco options here
                   }}
                 />
               </div>
               <button
                 onClick={executeQuery}
-                className="btn-primary w-full flex items-center justify-center"
+                className="btn-primary w-full flex items-center justify-center mb-4"
                 disabled={state.isLoading}
               >
                 {state.isLoading ? (
@@ -1382,14 +1612,319 @@ export default function GraphEditorPage() {
                 )}
                 Execute Query
               </button>
+
+              {/* Query Results Section */}
               {state.queryResult && (
-                <div className="mt-4 p-3 bg-gray-900 bg-opacity-50 rounded-lg text-sm overflow-auto max-h-48">
-                  <h3 className="text-white font-medium mb-2">Query Result:</h3>
-                  <pre className="text-gray-300 whitespace-pre-wrap">
-                    {JSON.stringify(state.queryResult, null, 2)}
-                  </pre>
+                <div className="space-y-4 mb-6">
+                  {/* Summary Section */}
+                  <div className="p-4 bg-gray-900 bg-opacity-70 rounded-lg border border-gray-700">
+                    <h3 className="text-white font-semibold mb-3 flex items-center">
+                      <BarChart3 className="w-5 h-5 mr-2 text-cyan-400" />
+                      Query Execution Summary
+                    </h3>
+                    
+                    <div className="grid grid-cols-2 gap-4 text-sm">
+                      <div>
+                        <span className="text-gray-400">Commands Executed:</span>
+                        <span className="text-cyan-400 font-medium ml-2">
+                          {getAggregationNumber(state.queryResult.aggregations, 'executedCommands', 0)}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-gray-400">Total Results:</span>
+                        <span className="text-green-400 font-medium ml-2">
+                          {state.queryResult.totalResults}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-gray-400">Execution Time:</span>
+                        <span className="text-purple-400 font-medium ml-2">
+                          {new Date(state.queryResult.executionTime).toLocaleTimeString()}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-gray-400">Status:</span>
+                        <span className={`font-medium ml-2 ${hasAggregationError(state.queryResult.aggregations) ? 'text-red-400' : 'text-green-400'}`}>
+                          {hasAggregationError(state.queryResult.aggregations) ? 'Error' : 'Success'}
+                        </span>
+                      </div>
+                    </div>
+
+                    {hasAggregationError(state.queryResult.aggregations) && (
+                      <div className="mt-4 p-3 bg-red-900 bg-opacity-50 border border-red-600 rounded">
+                        <h4 className="text-red-300 font-medium mb-2">Error Details:</h4>
+                        <p className="text-red-200 text-sm font-mono">
+                          {String(getAggregationValue(state.queryResult.aggregations, 'error'))}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Command Results Section */}
+                  {getCommands(state.queryResult.aggregations).length > 0 && (
+                    <div className="p-4 bg-gray-900 bg-opacity-70 rounded-lg border border-gray-700">
+                      <h3 className="text-white font-semibold mb-3 flex items-center">
+                        <FileText className="w-5 h-5 mr-2 text-green-400" />
+                        Command Results ({getCommands(state.queryResult.aggregations).length})
+                      </h3>
+                      
+                      <div className="space-y-3 max-h-96 overflow-y-auto pr-2">
+                        {getCommands(state.queryResult.aggregations).map((cmd, index: number) => (
+                          <div key={index} className={`p-3 rounded border-l-4 ${
+                            cmd.success 
+                              ? 'bg-green-900 bg-opacity-30 border-green-400' 
+                              : 'bg-red-900 bg-opacity-30 border-red-400'
+                          }`}>
+                            {/* Command Header */}
+                            <div className="flex items-center justify-between mb-2">
+                              <span className={`text-sm font-medium ${
+                                cmd.success ? 'text-green-300' : 'text-red-300'
+                              }`}>
+                                {cmd.type} Command
+                              </span>
+                              <span className={`text-xs px-2 py-1 rounded ${
+                                cmd.success 
+                                  ? 'bg-green-700 text-green-200' 
+                                  : 'bg-red-700 text-red-200'
+                              }`}>
+                                {cmd.success ? '✓ Success' : '✗ Failed'}
+                              </span>
+                            </div>
+
+                            {/* Original Command */}
+                            <div className="mb-3">
+                              <span className="text-gray-400 text-xs block mb-1">Command:</span>
+                              <code className="text-cyan-300 text-sm bg-gray-800 px-2 py-1 rounded font-mono block">
+                                {cmd.command}
+                              </code>
+                            </div>
+
+                            {/* Results */}
+                            <div>
+                              <span className="text-gray-400 text-xs block mb-1">Result:</span>
+                              <div className="text-sm">
+                                {(() => {
+                                  if (cmd.type === 'CREATE' && cmd.result && typeof cmd.result === 'object' && 'nodeId' in cmd.result) {
+                                    const createResult = cmd.result as CreateCommandResult;
+                                    return (
+                                      <div className="space-y-1">
+                                        <p className="text-white">
+                                          ✅ Created <span className="text-cyan-400 font-medium">{createResult.type}</span> node
+                                        </p>
+                                        <p className="text-gray-300">
+                                          ID: <span className="text-purple-300 font-mono">{createResult.nodeId}</span>
+                                        </p>
+                                        {Object.keys(createResult.properties || {}).length > 0 && (
+                                          <div>
+                                            <span className="text-gray-400">Properties:</span>
+                                            <div className="ml-4 mt-1">
+                                              {Object.entries(createResult.properties || {}).map(([key, value]) => (
+                                                <div key={key} className="text-gray-300 text-xs">
+                                                  <span className="text-orange-300">{key}:</span> <span className="text-white">{String(value)}</span>
+                                                </div>
+                                              ))}
+                                            </div>
+                                          </div>
+                                        )}
+                                      </div>
+                                    );
+                                  } else if (cmd.type === 'MATCH' && cmd.result && typeof cmd.result === 'object' && 'count' in cmd.result) {
+                                    const matchResult = cmd.result as MatchCommandResult;
+                                    return (
+                                      <div className="space-y-2">
+                                        <p className="text-white">
+                                          🔍 Matched <span className="text-cyan-400 font-medium">{matchResult.count}</span> items
+                                        </p>
+                                        <p className="text-gray-300">
+                                          Pattern: <span className="text-orange-300 font-mono">{matchResult.pattern}</span>
+                                        </p>
+                                        
+                                        {matchResult.matchedNodes && matchResult.matchedNodes.length > 0 && (
+                                          <div>
+                                            <span className="text-gray-400">Nodes ({matchResult.matchedNodes.length}):</span>
+                                            <div className="ml-4 mt-1 space-y-1">
+                                              {matchResult.matchedNodes.slice(0, 5).map((node, nodeIndex: number) => (
+                                                <div key={nodeIndex} className="text-xs">
+                                                  <span className="text-cyan-300">{node.type}</span>
+                                                  <span className="text-gray-400 mx-1">•</span>
+                                                  <span className="text-purple-300 font-mono">{node.id}</span>
+                                                  {Boolean(node.properties?.name) && (
+                                                    <>
+                                                      <span className="text-gray-400 mx-1">•</span>
+                                                      <span className="text-white">{String(node.properties.name)}</span>
+                                                    </>
+                                                  )}
+                                                </div>
+                                              ))}
+                                              {matchResult.matchedNodes.length > 5 && (
+                                                <div className="text-xs text-gray-500">
+                                                  ... and {matchResult.matchedNodes.length - 5} more
+                                                </div>
+                                              )}
+                                            </div>
+                                          </div>
+                                        )}
+
+                                        {matchResult.matchedRelationships && matchResult.matchedRelationships.length > 0 && (
+                                          <div>
+                                            <span className="text-gray-400">Relationships ({matchResult.matchedRelationships.length}):</span>
+                                            <div className="ml-4 mt-1 space-y-1">
+                                              {matchResult.matchedRelationships.slice(0, 5).map((rel, relIndex: number) => (
+                                                <div key={relIndex} className="text-xs">
+                                                  <span className="text-cyan-300">{rel.sourceId}</span>
+                                                  <span className="text-purple-400 mx-1">-[{rel.type}]-&gt;</span>
+                                                  <span className="text-cyan-300">{rel.targetId}</span>
+                                                </div>
+                                              ))}
+                                              {matchResult.matchedRelationships.length > 5 && (
+                                                <div className="text-xs text-gray-500">
+                                                  ... and {matchResult.matchedRelationships.length - 5} more
+                                                </div>
+                                              )}
+                                            </div>
+                                          </div>
+                                        )}
+                                      </div>
+                                    );
+                                  } else if (cmd.type === 'CLEAR') {
+                                    return <p className="text-green-300">🧹 {String(cmd.result)}</p>;
+                                  } else if (cmd.type === 'UNKNOWN') {
+                                    return <p className="text-red-300">❌ {String(cmd.result)}</p>;
+                                  } else if (!cmd.success && typeof cmd.result === 'string') {
+                                    return <p className="text-red-300">❌ {cmd.result}</p>;
+                                  }
+                                  return null; // Default return if no conditions are met
+                                })()}
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Current Graph State */}
+                  {state.queryResult && getGraphStatsFromAggregations(state.queryResult.aggregations) && (
+                    <div className="p-4 bg-gray-900 bg-opacity-70 rounded-lg border border-gray-700">
+                      <h3 className="text-white font-semibold mb-3 flex items-center">
+                        <Database className="w-5 h-5 mr-2 text-blue-400" />
+                        Current Graph State
+                      </h3>
+                      
+                      <div className="grid grid-cols-2 gap-4 text-sm">
+                        <div>
+                          <span className="text-gray-400">Total Nodes:</span>
+                          <span className="text-cyan-400 font-medium ml-2">
+                            {getGraphStatsFromAggregations(state.queryResult.aggregations)?.nodeCount || 0}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-gray-400">Total Relationships:</span>
+                          <span className="text-purple-400 font-medium ml-2">
+                            {getGraphStatsFromAggregations(state.queryResult.aggregations)?.relationshipCount || 0}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-gray-400">Node Types:</span>
+                          <span className="text-orange-400 font-medium ml-2">
+                            {Object.keys(getGraphStatsFromAggregations(state.queryResult.aggregations)?.nodeTypes || {}).length}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-gray-400">Relationship Types:</span>
+                          <span className="text-green-400 font-medium ml-2">
+                            {Object.keys(getGraphStatsFromAggregations(state.queryResult.aggregations)?.relationshipTypes || {}).length}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Raw JSON Output */}
+                  {state.queryResult && (
+                  <details className="p-4 bg-gray-900 bg-opacity-70 rounded-lg border border-gray-700">
+                    <summary className="text-white font-semibold cursor-pointer hover:text-cyan-300 transition-colors">
+                      🔧 Raw JSON Output (Click to expand)
+                    </summary>
+                    <div className="mt-3 p-3 bg-gray-800 rounded border max-h-64 overflow-auto">
+                      <pre className="text-gray-300 text-xs whitespace-pre-wrap font-mono">
+                        {JSON.stringify(state.queryResult, null, 2)}
+                      </pre>
+                    </div>
+                  </details>
+                  )}
                 </div>
               )}
+
+              {/* Example Queries Section */}
+              <div className="mt-6 p-4 border border-blue-700 rounded-lg bg-blue-900 bg-opacity-30">
+                <h4 className="text-blue-300 font-medium mb-3">📚 Example Queries</h4>
+                <div className="space-y-2 text-xs">
+                  <div>
+                    <button 
+                      onClick={() => setQueryText('CREATE (alice:Person {name: "Alice", age: 30})')}
+                      className="text-left w-full p-2 bg-gray-800 rounded hover:bg-gray-700 transition-colors"
+                    >
+                      <code className="text-cyan-300">CREATE (alice:Person {`{name: "Alice", age: 30}`})</code>
+                      <p className="text-gray-400 mt-1">Create a new person node</p>
+                    </button>
+                  </div>
+                  <div>
+                    <button 
+                      onClick={() => setQueryText('MATCH (p:Person) RETURN p')}
+                      className="text-left w-full p-2 bg-gray-800 rounded hover:bg-gray-700 transition-colors"
+                    >
+                      <code className="text-cyan-300">MATCH (p:Person) RETURN p</code>
+                      <p className="text-gray-400 mt-1">Find all person nodes</p>
+                    </button>
+                  </div>
+                  <div>
+                    <button 
+                      onClick={() => setQueryText('CREATE (company:Company {name: "TechCorp", founded: 2020})\nCREATE (product:Product {name: "SuperApp", version: "1.0"})')}
+                      className="text-left w-full p-2 bg-gray-800 rounded hover:bg-gray-700 transition-colors"
+                    >
+                      <code className="text-cyan-300">CREATE (company:Company {`{name: "TechCorp", founded: 2020}`})<br />CREATE (product:Product {`{name: "SuperApp", version: "1.0"}`})</code>
+                      <p className="text-gray-400 mt-1">Create company and product nodes</p>
+                    </button>
+                  </div>
+                  <div>
+                    <button 
+                      onClick={() => setQueryText('MATCH (c:Company) RETURN c')}
+                      className="text-left w-full p-2 bg-gray-800 rounded hover:bg-gray-700 transition-colors"
+                    >
+                      <code className="text-cyan-300">MATCH (c:Company) RETURN c</code>
+                      <p className="text-gray-400 mt-1">Find all company nodes</p>
+                    </button>
+                  </div>
+                  <div>
+                    <button 
+                      onClick={() => setQueryText('MATCH ()-[r:KNOWS]-() RETURN r')}
+                      className="text-left w-full p-2 bg-gray-800 rounded hover:bg-gray-700 transition-colors"
+                    >
+                      <code className="text-cyan-300">MATCH ()-[r:KNOWS]-() RETURN r</code>
+                      <p className="text-gray-400 mt-1">Find all KNOWS relationships</p>
+                    </button>
+                  </div>
+                  <div>
+                    <button 
+                      onClick={() => setQueryText('CREATE (alice:Person {name: "Alice", role: "Engineer"})\nCREATE (bob:Person {name: "Bob", role: "Designer"})\nCREATE (acme:Company {name: "ACME Corp", industry: "Tech"})')}
+                      className="text-left w-full p-2 bg-gray-800 rounded hover:bg-gray-700 transition-colors"
+                    >
+                      <code className="text-cyan-300">CREATE (alice:Person {`{name: "Alice", role: "Engineer"}`})<br />CREATE (bob:Person {`{name: "Bob", role: "Designer"}`})<br />CREATE (acme:Company {`{name: "ACME Corp", industry: "Tech"}`})</code>
+                      <p className="text-gray-400 mt-1">Create a complete team structure</p>
+                    </button>
+                  </div>
+                  <div>
+                    <button 
+                      onClick={() => setQueryText('CLEAR')}
+                      className="text-left w-full p-2 bg-gray-800 rounded hover:bg-gray-700 transition-colors"
+                    >
+                      <code className="text-red-300">CLEAR</code>
+                      <p className="text-gray-400 mt-1">Clear all graph data</p>
+                    </button>
+                  </div>
+                </div>
+              </div>
             </div>
           )}
 

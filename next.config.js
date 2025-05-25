@@ -11,6 +11,13 @@ const nextConfig = {
         tls: false,
       };
     }
+    
+    // Monaco Editor configuration
+    config.module.rules.push({
+      test: /\.ttf$/,
+      type: 'asset/resource',
+    });
+    
     config.externals.push('rdf-canonize-native');
     return config;
   },
