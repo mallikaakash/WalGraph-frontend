@@ -1,0 +1,12 @@
+[package]
+name = "webwalrus_graph"
+version = "1.0.0"
+authors = ["WalGraph Team"]
+edition = "2024.beta"
+
+[dependencies]
+Sui = { git = "https://github.com/MystenLabs/sui.git", subdir = "crates/sui-framework/packages/sui-framework", rev = "framework/testnet" }
+
+[addresses]
+webwalrus_graph = "0x0"
+sui = "0x2" 

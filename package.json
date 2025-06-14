@@ -13,11 +13,13 @@
     "@mysten/dapp-kit": "^0.14.29",
     "@mysten/sui": "1.24.0",
     "@tanstack/react-query": "^5.0.0",
+    "@types/file-saver": "^2.0.7",
     "axios": "^1.6.0",
     "d3": "^7.9.0",
     "d3-force": "^3.0.0",
     "d3-selection": "^3.0.0",
     "d3-zoom": "^3.0.0",
+    "file-saver": "^2.0.5",
     "jsonld": "^8.3.3",
     "lucide-react": "^0.511.0",
     "monaco-editor": "^0.52.2",
@@ -26,6 +28,7 @@
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-papaparse": "^4.4.0",
+    "react-toastify": "^11.0.5",
     "uuid": "^9.0.0"
   },
   "devDependencies": {

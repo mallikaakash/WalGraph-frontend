@@ -505,46 +505,151 @@ export class CompleteGraphService {
   // ==========================
 
   /**
-   * Save graph to Walrus and SUI
+   * Save graph to Walrus and create metadata on SUI
    */
   async saveGraph(
-    metadata: { name: string; description: string; isPublic: boolean; tags: string[] },
+    metadata: {
+      name: string;
+      description: string;
+      isPublic: boolean;
+      tags: string[];
+    },
     signAndExecute: SignAndExecuteFunction
-  ): Promise<{ blobId: string; suiObjectId: string }> {
-    try {
-      console.log('💾 Saving graph...');
-      
-      // Convert to arrays
-      const nodes = Array.from(this.nodes.values());
-      const relationships = Array.from(this.relationships.values());
-      
-      // Store in Walrus
-      const walrusResult = await this.walrusService.storeGraph(nodes, relationships, metadata);
-      
-      // Store metadata in SUI
-      const suiObjectId = await this.suiService.createGraphMetadata({
+  ): Promise<{ blobId: string; graphId: string }> {
+    const graphData = {
+      nodes: Array.from(this.nodes.values()),
+      relationships: Array.from(this.relationships.values()),
+    };
+
+    console.log('📡 Saving graph with metadata:', metadata);
+    console.log('📊 Graph contains:', graphData.nodes.length, 'nodes and', graphData.relationships.length, 'relationships');
+
+    // Store data to Walrus
+    const walrusResult = await this.walrusService.storeGraph(
+      graphData.nodes,
+      graphData.relationships,
+      {
+        name: metadata.name,
+        description: metadata.description,
+      }
+    );
+
+    console.log('✅ Walrus storage result:', walrusResult);
+
+    // Create metadata on SUI
+    const graphId = await this.suiService.createGraphMetadata(
+      {
         name: metadata.name,
         description: metadata.description,
         blobId: walrusResult.blobId,
-        nodeCount: nodes.length,
-        relationshipCount: relationships.length,
+        nodeCount: graphData.nodes.length,
+        relationshipCount: graphData.relationships.length,
         isPublic: metadata.isPublic,
-        tags: metadata.tags
-      }, 
+        tags: metadata.tags,
+      },
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      signAndExecute as any); // Cast to resolve type mismatch
+      signAndExecute as any
+    );
 
-      console.log('✅ Graph saved successfully!');
-      
-      return {
+    console.log('✅ SUI metadata creation result:', graphId);
+
+    return {
+      blobId: walrusResult.blobId,
+      graphId: graphId,
+    };
+  }
+
+  /**
+   * NEW: Save current graph as a new version of an existing graph
+   */
+  async createNewVersion(
+    graphId: string,
+    changes: string,
+    signAndExecute: SignAndExecuteFunction
+  ): Promise<{ blobId: string; version: number }> {
+    const graphData = {
+      nodes: Array.from(this.nodes.values()),
+      relationships: Array.from(this.relationships.values()),
+    };
+
+    console.log('📡 Saving new version for graph:', graphId);
+    console.log('📊 Changes:', changes);
+    console.log('📊 Graph contains:', graphData.nodes.length, 'nodes and', graphData.relationships.length, 'relationships');
+
+    // Store new version data to Walrus
+    const walrusResult = await this.walrusService.storeGraph(
+      graphData.nodes,
+      graphData.relationships,
+      {
+        name: `Version update`,
+        description: changes,
+      }
+    );
+
+    console.log('✅ Walrus storage result:', walrusResult);
+
+    // Create new version on SUI
+    const version = await this.suiService.createNewGraphVersion(
+      graphId,
+      {
         blobId: walrusResult.blobId,
-        suiObjectId
-      };
+        nodeCount: graphData.nodes.length,
+        relationshipCount: graphData.relationships.length,
+        changes,
+      },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      signAndExecute as any
+    );
 
-    } catch (error) {
-      console.error('❌ Error saving graph:', error);
-      throw new StorageError('Failed to save graph', 'save', error);
+    console.log('✅ SUI version creation result:', version);
+
+    return {
+      blobId: walrusResult.blobId,
+      version: version,
+    };
+  }
+
+  /**
+   * NEW: Switch to a different version of the graph
+   */
+  async switchToVersion(
+    graphId: string,
+    targetVersion: number,
+    signAndExecute: SignAndExecuteFunction
+  ): Promise<void> {
+    console.log('📡 Switching to version:', targetVersion, 'for graph:', graphId);
+
+    // Switch version on SUI
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await this.suiService.switchToGraphVersion(graphId, targetVersion, signAndExecute as any);
+
+    // Reload graph data from the new version
+    const metadata = await this.suiService.getGraphMetadata(graphId);
+    if (metadata) {
+      await this.loadGraph(metadata.blobId);
     }
+
+    console.log('✅ Successfully switched to version:', targetVersion);
+  }
+
+  /**
+   * Check if there are unsaved changes
+   */
+  hasUnsavedChanges(): boolean {
+    // This is a simple check - in a real implementation you might want to 
+    // calculate a hash of current data and compare with saved state
+    return this.nodes.size > 0 || this.relationships.size > 0;
+  }
+
+  /**
+   * Get a summary of the current graph state
+   */
+  getGraphStateSummary(): { nodeCount: number; relationshipCount: number; lastModified: number } {
+    return {
+      nodeCount: this.nodes.size,
+      relationshipCount: this.relationships.size,
+      lastModified: Date.now(),
+    };
   }
 
   /**

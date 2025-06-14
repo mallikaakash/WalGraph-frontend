@@ -121,6 +121,55 @@ export interface GraphMetadata {
   isPublic: boolean;
   tags: string[];
   version: number;
+  currentVersionInfo: VersionInfo;
+}
+
+// Version information for each graph version
+export interface VersionInfo {
+  blobId: string;
+  nodeCount: number;
+  relationshipCount: number;
+  changes: string;
+  createdAt: number;
+  createdBy: string;
+}
+
+// Version history entry for display
+export interface GraphVersionHistoryEntry {
+  version: number;
+  blobId: string;
+  changes: string;
+  createdAt: number;
+  createdBy: string;
+  nodeCount: number;
+  relationshipCount: number;
+}
+
+// Version creation data
+export interface CreateVersionData {
+  blobId: string;
+  nodeCount: number;
+  relationshipCount: number;
+  changes: string;
+}
+
+// Transaction result interface
+export interface TransactionResult {
+  digest: string;
+  effects?: {
+    status: {
+      status: string;
+    };
+  };
+  events?: Array<{
+    type: string;
+    parsedJson?: {
+      version?: number;
+      graph_id?: string;
+      [key: string]: unknown;
+    };
+  }>;
+  objectChanges?: unknown[];
 }
 
 // JSON-LD Types

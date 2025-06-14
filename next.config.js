@@ -2,7 +2,7 @@
 const nextConfig = {
   reactStrictMode: true,
   
-  // Turbopack configuration (stable)
+  // Turbopack configuration
   turbopack: {
     rules: {
       '*.ttf': {
@@ -12,13 +12,8 @@ const nextConfig = {
     },
   },
   
-  // Webpack configuration (only when NOT using Turbopack)
+  // Webpack configuration
   webpack: (config, { isServer, dev, webpack }) => {
-    // Skip webpack config entirely when using Turbopack
-    if (process.env.TURBOPACK || (dev && process.argv.includes('--turbopack'))) {
-      return config;
-    }
-    
     // Fixes npm packages that depend on `fs` module
     if (!isServer) {
       config.resolve.fallback = {
@@ -29,13 +24,38 @@ const nextConfig = {
       };
     }
     
-    // Monaco Editor configuration
+    // Monaco Editor configuration - always apply
     config.module.rules.push({
       test: /\.ttf$/,
       type: 'asset/resource',
     });
     
+    // Handle Monaco Editor workers
+    config.module.rules.push({
+      test: /monaco-editor.*\.js$/,
+      type: 'javascript/auto',
+    });
+    
     config.externals.push('rdf-canonize-native');
+    
+    // Optimize chunks for Monaco Editor
+    if (!isServer) {
+      config.optimization = {
+        ...config.optimization,
+        splitChunks: {
+          ...config.optimization.splitChunks,
+          cacheGroups: {
+            ...config.optimization.splitChunks?.cacheGroups,
+            monaco: {
+              name: 'monaco-editor',
+              chunks: 'all',
+              test: /[\\/]node_modules[\\/]monaco-editor[\\/]/,
+              priority: 20,
+            },
+          },
+        },
+      };
+    }
     
     return config;
   },
