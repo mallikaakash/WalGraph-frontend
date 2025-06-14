@@ -3524,7 +3524,7 @@ export default function GraphEditorPage() {
                             ) : (
                               <Save className="w-4 h-4 mr-2" />
                             )}
-                            Save Graph to Sui
+                            Save Graph to Walrus
                           </button>
                           {!currentAccount && (
                             <p className="text-red-400 text-xs">Connect your wallet to save graphs.</p>
