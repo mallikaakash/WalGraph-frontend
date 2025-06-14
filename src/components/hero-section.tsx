@@ -5,7 +5,7 @@ import GraphMotion from './graph';
 
 export function HeroSection() {
   return (
-    <section className="relative min-h-screen flex flex-col justify-center bg-black">
+    <section className="relative min-h-screen flex flex-col justify-center bg-black mt-4 ml-1">
       <div className="absolute inset-0 bg-black opacity-90"></div>
       
       <div className="container mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
@@ -15,8 +15,9 @@ export function HeroSection() {
               
               <span className="block text-5xl sm:text-6xl md:text-7xl lg:text-8xl font-bold text-white mt-2 font-inter" 
                 style={{ letterSpacing: "-1px" }}>
-                <span className="font-normal text-gray-100">  World&apos;s 1st </span>
-                Decentralized GraphDB
+                <span className="block font-normal text-gray-100">The</span>
+                <span className="block font-normal text-gray-100">1st</span>
+                <span className="block">Decentralized GraphDB</span>
               </span>
             </h1>
             
@@ -32,7 +33,7 @@ export function HeroSection() {
               >
               <div className="flex flex-row items-center">
               
-                Try Editor
+                Get Started
               
               </div>
               </Link>

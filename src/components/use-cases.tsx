@@ -2,16 +2,16 @@
 
 export function UseCasesSection() {
   return (
-    <section id="use-cases" className="py-20 bg-accent/5">
+    <section className="py-20 bg-accent/5">
       <div className="container mx-auto px-4">
         <div className="text-center mb-16">
-          <h2 className="text-3xl font-bold mb-4">Use Cases</h2>
-          <p className="text-lg text-muted max-w-2xl mx-auto">
+          <h2 className="text-3xl font-bold mb-4 text-center">Use Cases</h2>
+          <p className="text-lg text-muted max-w-2xl mx-auto text-center mb-8">
             Our decentralized graph database powers a variety of applications across industries.
           </p>
         </div>
 
-        <div className="grid md:grid-cols-3 gap-8">
+        <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-8">
           <div className="bg-background rounded-lg border border-border overflow-hidden">
             <div className="h-48 bg-gradient-to-r from-blue-500 to-purple-600 flex items-center justify-center">
               <svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -50,6 +50,21 @@ export function UseCasesSection() {
               <h3 className="text-xl font-bold mb-3">Knowledge Management</h3>
               <p className="text-muted mb-4">
                 Create interconnected knowledge bases that preserve relationships between concepts while maintaining data integrity.
+              </p>
+            </div>
+          </div>
+
+          <div className="bg-background rounded-lg border border-border overflow-hidden">
+            <div className="h-48 bg-gradient-to-r from-blue-500 to-pink-500 flex items-center justify-center">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6.94 6.94a8 8 0 1110.12 0M9 10h.01M15 10h.01M9.17 15.17a4 4 0 005.66 0" />
+                <rect x="7" y="14" width="10" height="4" rx="2" />
+              </svg>
+            </div>
+            <div className="p-6">
+              <h3 className="text-xl font-bold mb-3">Gaming Ecosystems</h3>
+              <p className="text-muted mb-4">
+                Store player relationships, guild structures, and in-game economies in a truly decentralized way.
               </p>
             </div>
           </div>

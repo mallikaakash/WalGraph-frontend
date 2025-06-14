@@ -23,6 +23,8 @@ interface Link extends d3.SimulationLinkDatum<Node> {
 
 export default function GraphMotion() {
   const svgRef = useRef<SVGSVGElement>(null);
+  const simulationRef = useRef<d3.Simulation<Node, Link> | null>(null);
+  const repelIntervalRef = useRef<{ [key: string]: NodeJS.Timeout }>({});
   
   // Define icons mapping
   const icons = {
@@ -45,8 +47,9 @@ export default function GraphMotion() {
     icon: iconTypes[i % iconTypes.length],
     size: i === 0 ? 35 : Math.random() * 12 + 18,
     glow: Math.random() > 0.7,
-    x: undefined,
-    y: undefined,
+    // Shift nodes slightly more to the right
+    x: 600 + Math.cos((i / 12) * 2 * Math.PI) * 300 + Math.random() * 80,
+    y: 400 + Math.sin((i / 12) * 2 * Math.PI) * 220 + Math.random() * 60,
     vx: 0,
     vy: 0,
     fx: undefined,
@@ -102,6 +105,23 @@ export default function GraphMotion() {
     // Create definitions for filters and gradients
     const defs = svg.append("defs");
     
+    // Create node gradient (more subtle, Obsidian-like)
+    const nodeGradient = defs.append("radialGradient")
+      .attr("id", "nodeGradient");
+    // Use light greys for a subtle effect
+    nodeGradient.append("stop")
+      .attr("offset", "0%")
+      .attr("stop-color", "#e5e5e5")
+      .attr("stop-opacity", 0.85);
+    nodeGradient.append("stop")
+      .attr("offset", "70%")
+      .attr("stop-color", "#cccccc")
+      .attr("stop-opacity", 0.6);
+    nodeGradient.append("stop")
+      .attr("offset", "100%")
+      .attr("stop-color", "#888888")
+      .attr("stop-opacity", 0.22);
+
     // Create subtle glow filter (Obsidian-style)
     const filter = defs.append("filter")
       .attr("id", "glow")
@@ -109,16 +129,23 @@ export default function GraphMotion() {
       .attr("y", "-50%")
       .attr("width", "200%")
       .attr("height", "200%");
-      
     filter.append("feGaussianBlur")
       .attr("stdDeviation", "2")
       .attr("result", "blur");
-      
+    filter.append("feFlood")
+      .attr("flood-color", "#bbbbbb")
+      .attr("flood-opacity", "0.7")
+      .attr("result", "color");
+    filter.append("feComposite")
+      .attr("in", "color")
+      .attr("in2", "blur")
+      .attr("operator", "in")
+      .attr("result", "glowColor");
     filter.append("feComposite")
       .attr("in", "SourceGraphic")
-      .attr("in2", "blur")
+      .attr("in2", "glowColor")
       .attr("operator", "over");
-    
+
     // Create more intense glow for highlighted nodes
     const intenseGlow = defs.append("filter")
       .attr("id", "intense-glow")
@@ -126,50 +153,40 @@ export default function GraphMotion() {
       .attr("y", "-100%")
       .attr("width", "300%")
       .attr("height", "300%");
-      
     intenseGlow.append("feGaussianBlur")
       .attr("stdDeviation", "6")
       .attr("result", "blur");
-      
+    intenseGlow.append("feFlood")
+      .attr("flood-color", "#bbbbbb")
+      .attr("flood-opacity", "0.7")
+      .attr("result", "color");
+    intenseGlow.append("feComposite")
+      .attr("in", "color")
+      .attr("in2", "blur")
+      .attr("operator", "in")
+      .attr("result", "glowColor");
     intenseGlow.append("feComposite")
       .attr("in", "SourceGraphic")
-      .attr("in2", "blur")
+      .attr("in2", "glowColor")
       .attr("operator", "over");
-      
-    // Create node gradient (more subtle, Obsidian-like)
-    const nodeGradient = defs.append("radialGradient")
-      .attr("id", "nodeGradient");
-      
-    nodeGradient.append("stop")
-      .attr("offset", "0%")
-      .attr("stop-color", "#ffffff")
-      .attr("stop-opacity", 0.9);
-      
-    nodeGradient.append("stop")
-      .attr("offset", "70%")
-      .attr("stop-color", "#e5e5e5")
-      .attr("stop-opacity", 0.7);
-      
-    nodeGradient.append("stop")
-      .attr("offset", "100%")
-      .attr("stop-color", "#999999")
-      .attr("stop-opacity", 0.3);
     
     // Create the simulation with better centering
     const simulation = d3.forceSimulation<Node>(nodes)
       .force("link", d3.forceLink<Node, Link>(links)
         .id(d => d.id)
-        .distance(() => 120 + Math.random() * 60)
-        .strength(0.3))
-      .force("charge", d3.forceManyBody().strength(() => -250 - Math.random() * 100))
-      .force("center", d3.forceCenter(width / 2, height / 2))
+        .distance(() => 180 + Math.random() * 80)
+        .strength(0.25))
+      .force("charge", d3.forceManyBody().strength(() => -400 - Math.random() * 120))
+      // Shift center to the right
+      .force("center", d3.forceCenter(width / 2 + 80, height / 2))
       .force("collision", d3.forceCollide().radius((node: SimulationNodeDatum) => {
         const n = node as Node;
-        return (n.size || 15) + 20;
-      }).strength(0.7))
-      .force("x", d3.forceX(width / 2).strength(0.05))
-      .force("y", d3.forceY(height / 2).strength(0.05))
-      .alphaDecay(0.01);
+        return (n.size || 15) + 38;
+      }).strength(0.8))
+      .force("x", d3.forceX(width / 2 + 80).strength(0.04))
+      .force("y", d3.forceY(height / 2).strength(0.04))
+      .alphaDecay(0.0007) // very slow decay for gentle, continuous movement
+      .alphaMin(0.025); // never fully settle
     
     // Create links with Obsidian-style appearance
     const link = svg.append("g")
@@ -198,9 +215,41 @@ export default function GraphMotion() {
       .attr("r", d => d.size)
       .attr("fill", "url(#nodeGradient)")
       .attr("filter", d => d.glow ? "url(#intense-glow)" : "url(#glow)")
-      .attr("opacity", 0.85)
-      .attr("stroke", "rgba(255, 255, 255, 0.4)")
-      .attr("stroke-width", 1);
+      .on("mouseover", function (event, d) {
+        d3.select(this)
+          .transition()
+          .duration(120)
+          .attr("r", d.size * 1.18)
+          .attr("filter", "none");
+        // Start interval to keep moving node away from mouse
+        const nodeId = d.id;
+        if (repelIntervalRef.current[nodeId]) clearInterval(repelIntervalRef.current[nodeId]);
+        repelIntervalRef.current[nodeId] = setInterval(() => {
+          const [mouseX, mouseY] = d3.pointer(event, svgRef.current);
+          const dx = (d.x ?? 0) - mouseX;
+          const dy = (d.y ?? 0) - mouseY;
+          const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+          if (typeof d.vx !== 'number') d.vx = 0;
+          if (typeof d.vy !== 'number') d.vy = 0;
+          const force = 12; // stronger force for active fleeing
+          d.vx += (dx / dist) * force;
+          d.vy += (dy / dist) * force;
+          if (simulationRef.current) simulationRef.current.alpha(0.18).restart();
+        }, 30);
+      })
+      .on("mouseout", function (event, d) {
+        d3.select(this)
+          .transition()
+          .duration(180)
+          .attr("r", d.size)
+          .attr("filter", d.glow ? "url(#intense-glow)" : "url(#glow)");
+        // Stop the repel interval
+        const nodeId = d.id;
+        if (repelIntervalRef.current[nodeId]) {
+          clearInterval(repelIntervalRef.current[nodeId]);
+          delete repelIntervalRef.current[nodeId];
+        }
+      });
     
     // Add SVG foreign objects for the Lucide icons
     node.append("foreignObject")
@@ -256,12 +305,17 @@ export default function GraphMotion() {
 
     const particles: Particle[] = [];
     links.forEach((_, i) => {
-      if (Math.random() > 0.7) { // Only some links have particles
+      // 50% chance for 1 particle, 20% for 2, else none
+      const rand = Math.random();
+      let numParticles = 0;
+      if (rand < 0.2) numParticles = 2;
+      else if (rand < 0.7) numParticles = 1;
+      for (let j = 0; j < numParticles; j++) {
         particles.push({
           linkIndex: i,
           progress: Math.random(),
           speed: 0.001 + Math.random() * 0.002,
-          size: Math.random() * 1.5 + 0.5,
+          size: Math.random() * 1.5 + 1.5, // size range: 1.5 to 3
           opacity: Math.random() * 0.3 + 0.2
         });
       }
@@ -275,32 +329,6 @@ export default function GraphMotion() {
       .attr("fill", "white")
       .attr("opacity", d => d.opacity)
       .attr("filter", "url(#glow)");
-    
-    // Add hover interactions
-    node.on("mouseover", function(event, d) {
-      d3.select(this).select("circle")
-        .transition()
-        .duration(200)
-        .attr("r", d.size * 1.2)
-        .attr("filter", "url(#intense-glow)")
-        .attr("opacity", 1);
-        
-      // Highlight connected links
-      link.attr("opacity", l => {
-        return (l.source === d || l.target === d) ? 0.8 : 0.2;
-      });
-      
-    }).on("mouseout", function(event, d) {
-      d3.select(this).select("circle")
-        .transition()
-        .duration(300)
-        .attr("r", d.size)
-        .attr("filter", d.glow ? "url(#intense-glow)" : "url(#glow)")
-        .attr("opacity", 0.85);
-        
-      // Reset link opacity
-      link.attr("opacity", 0.6);
-    });
     
     // Update function
     function ticked() {
@@ -379,6 +407,14 @@ export default function GraphMotion() {
   useEffect(() => {
     createGraph();
   }, [createGraph]);
+
+  // Clean up all intervals on unmount
+  useEffect(() => {
+    const intervals = repelIntervalRef.current;
+    return () => {
+      Object.values(intervals).forEach(clearInterval);
+    };
+  }, []);
 
   return (
     <div className="w-full h-full flex items-center justify-center">

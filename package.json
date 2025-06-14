@@ -19,6 +19,7 @@
     "d3-force": "^3.0.0",
     "d3-selection": "^3.0.0",
     "d3-zoom": "^3.0.0",
+    "embla-carousel-react": "^8.6.0",
     "file-saver": "^2.0.5",
     "jsonld": "^8.3.3",
     "lucide-react": "^0.511.0",
