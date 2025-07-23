@@ -19,7 +19,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" className="dark">
-      <body className="bg-gradient-to-br from-gray-900 via-black to-gray-900 text-white min-h-screen antialiased">
+      <body className="bg-black text-white min-h-screen antialiased">
         <Providers>
           {children}
         </Providers>
